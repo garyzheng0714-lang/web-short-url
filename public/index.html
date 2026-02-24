@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小码短链创建器</title>
+    <meta
+      name="description"
+      content="基于小码 API 文档的短链创建前端页面（通过本地代理调用 API）"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <main class="shell">
+      <section class="hero card">
+        <div class="eyebrow">XIAOMARK / SHORTLINK</div>
+        <h1>小码短链创建器</h1>
+        <div class="hero-meta">
+          <span id="configBadge" class="badge">检查配置中...</span>
+          <span id="cacheBadge" class="badge">缓存策略加载中...</span>
+          <a
+            class="doc-link"
+            href="https://xiaomark.com/help/api/shortlink-api-create-link"
+            target="_blank"
+            rel="noreferrer"
+            >接口文档</a
+          >
+        </div>
+      </section>
+
+      <section class="layout">
+        <form id="createForm" class="card form-panel" novalidate>
+          <div class="panel-head">
+            <h2>创建单条短链</h2>
+            <p>对应文档：`/v2/sl/link/create`</p>
+          </div>
+
+          <div class="form-grid">
+            <label class="field field-span-2" data-key-field>
+              <span>API Key（apikey）</span>
+              <input
+                type="password"
+                name="apikey"
+                placeholder="若服务端已配置 XIAOMARK_API_KEY，可留空"
+                autocomplete="off"
+              />
+              <small>如果未在服务端配置，会用这里输入的 apikey 拉取项目/分组/域名并创建短链。</small>
+            </label>
+
+            <div class="field field-span-2 combo-field">
+              <span>项目（project_id）<em>*</em></span>
+              <div class="combo">
+                <select name="project_id" id="projectSelect" required>
+                  <option value="">请先加载项目</option>
+                </select>
+                <button type="button" class="btn btn-ghost btn-mini" id="refreshProjectsBtn">
+                  刷新项目
+                </button>
+              </div>
+              <small>点击选择框时会尝试拉取最新项目列表（服务端有短时缓存）。</small>
+            </div>
+
+            <div class="field field-span-2 combo-field">
+              <span>分组（group_id）<em>*</em></span>
+              <div class="combo">
+                <select name="group_id" id="groupSelect" required disabled>
+                  <option value="">请先选择项目</option>
+                </select>
+                <button type="button" class="btn btn-ghost btn-mini" id="refreshGroupsBtn" disabled>
+                  刷新分组
+                </button>
+                <button type="button" class="btn btn-primary btn-mini" id="openCreateGroupBtn" disabled>
+                  新建分组
+                </button>
+              </div>
+              <small>分组列表按当前项目加载；可先在这里新建分组再创建短链。</small>
+            </div>
+
+            <label class="field field-span-2">
+              <span>目标链接（target_url）<em>*</em></span>
+              <input
+                type="url"
+                name="target_url"
+                required
+                placeholder="https://example.com/path"
+                inputmode="url"
+              />
+            </label>
+          </div>
+
+          <details class="more-options" id="moreOptions">
+            <summary>
+              <span>更多选项（可选）</span>
+              <span class="summary-note">名称、自有域名、自定义后缀、Webhook、访问过滤等</span>
+            </summary>
+            <div class="more-options-body">
+              <div class="form-grid">
+                <label class="field field-span-2">
+                  <span>短链名称（name）</span>
+                  <input type="text" name="name" maxlength="128" placeholder="可选，最长 128 字符" />
+                </label>
+
+                <div class="field field-span-2 combo-field">
+                  <span>自有域名（domain）</span>
+                  <div class="combo">
+                    <select name="domain" id="domainSelect">
+                      <option value="">默认域名（不指定，使用小码默认）</option>
+                    </select>
+                    <button type="button" class="btn btn-ghost btn-mini" id="refreshDomainsBtn">
+                      刷新域名
+                    </button>
+                  </div>
+                  <small>点击选择框时会尝试拉取你账号下最新可用的自有域名列表。</small>
+                </div>
+
+                <label class="field">
+                  <span>自定义后缀（key）</span>
+                  <input
+                    type="text"
+                    name="key"
+                    maxlength="32"
+                    pattern="[A-Za-z0-9_-]{0,32}"
+                    placeholder="可选，A-Z a-z 0-9 _ -"
+                  />
+                </label>
+
+                <label class="field">
+                  <span>随机后缀长度（key_length）</span>
+                  <select name="key_length" id="keyLengthSelect">
+                    <option value="4">4（默认）</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                  </select>
+                </label>
+
+                <label class="field field-span-2">
+                  <span>Webhook 推送地址（展示/记录用）</span>
+                  <input
+                    type="url"
+                    name="webhook_callback_url"
+                    id="webhookCallbackUrl"
+                    placeholder="用于记录你在小码后台 API 设置中配置的推送地址"
+                  />
+                  <small>此字段不会提交给“创建单条短链”接口，仅便于前端记录和部署时核对配置。</small>
+                </label>
+
+                <label class="field field-span-2">
+                  <span>Webhook 场景（webhook_scene）</span>
+                  <input
+                    type="text"
+                    name="webhook_scene"
+                    maxlength="128"
+                    placeholder="仅 webhook 开启时生效，例如 foodtalks"
+                  />
+                </label>
+              </div>
+
+              <div class="toggles">
+                <label class="toggle">
+                  <input type="checkbox" name="escape_from_wechat" />
+                  <span>微信内强制浏览器打开（默认关闭）</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" name="advanced_bot_detection" checked />
+                  <span>深度过滤机器访问（默认开启）</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" name="webhook" checked />
+                  <span>开启事件推送（webhook，默认开启）</span>
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <div id="formError" class="inline-error" hidden></div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" id="submitBtn">创建短链</button>
+            <button type="reset" class="btn btn-ghost">清空</button>
+          </div>
+        </form>
+
+        <aside class="card result-panel">
+          <div class="panel-head">
+            <h2>结果</h2>
+            <p>展示返回短链和原始 JSON</p>
+          </div>
+
+          <section class="result-block">
+            <div class="result-label">短链地址</div>
+            <div id="linkOutput" class="link-output empty">尚未创建</div>
+            <div class="result-actions">
+              <button type="button" class="btn btn-ghost" id="copyLinkBtn" disabled>复制短链</button>
+              <a id="openLinkBtn" class="btn btn-ghost disabled-link" href="#" target="_blank" rel="noreferrer">打开</a>
+            </div>
+          </section>
+
+          <section class="result-block">
+            <div class="result-label">状态</div>
+            <div id="statusOutput" class="status-output">等待提交</div>
+            <div id="metaOutput" class="meta-output"></div>
+          </section>
+
+          <section class="result-block">
+            <div class="result-label">返回 JSON</div>
+            <pre id="jsonOutput" class="code-box">{}</pre>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="groupModal" class="modal">
+      <form method="dialog" class="modal-card" id="groupModalForm" novalidate>
+        <div class="modal-head">
+          <h3>新建分组</h3>
+          <button type="button" class="icon-btn" id="closeGroupModalBtn" aria-label="关闭">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <span>当前项目</span>
+            <div id="groupModalProjectInfo" class="readonly-box">未选择项目</div>
+          </div>
+          <label class="field">
+            <span>分组名称（name）<em>*</em></span>
+            <input type="text" id="newGroupName" maxlength="64" placeholder="例如：FoodTalks 活动页" required />
+          </label>
+          <div id="groupModalError" class="inline-error" hidden></div>
+          <div id="groupModalStatus" class="status-output">填写分组名称后提交</div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="cancelGroupModalBtn">取消</button>
+          <button type="submit" class="btn btn-primary" id="createGroupBtn">创建分组</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
