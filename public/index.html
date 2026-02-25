@@ -3,28 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>小码短链创建器</title>
+    <title>短链工具</title>
     <meta
       name="description"
-      content="基于小码 API 文档的短链创建前端页面（通过本地代理调用 API）"
+      content="小码短链工具：创建短链、生成二维码、重定向测试、解析重定向与本地列表管理。"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="bg-grid" aria-hidden="true"></div>
-    <main class="shell">
-      <section class="hero card">
-        <div class="eyebrow">XIAOMARK / SHORTLINK</div>
-        <h1>小码短链创建器</h1>
-        <div class="hero-meta">
-          <span id="configBadge" class="badge">检查配置中...</span>
-          <span id="cacheBadge" class="badge">缓存策略加载中...</span>
+
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#createForm" aria-label="返回创建短链表单">
+          <span class="brand-mark" aria-hidden="true">FBIF</span>
+          <span class="brand-divider" aria-hidden="true"></span>
+          <span class="brand-text">短链工具</span>
+        </a>
+
+        <div class="topbar-right">
+          <div class="topbar-status" aria-label="服务状态">
+            <span id="configBadge" class="badge">检查配置中...</span>
+            <span id="cacheBadge" class="badge">缓存策略加载中...</span>
+          </div>
           <a
             class="doc-link"
             href="https://xiaomark.com/help/api/shortlink-api-create-link"
@@ -33,170 +36,264 @@
             >接口文档</a
           >
         </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stats-grid" aria-label="统计卡片">
+        <article class="card stat-card">
+          <div class="stat-icon stat-icon-blue" aria-hidden="true">🔗</div>
+          <div class="stat-content">
+            <div id="statTotalLinks" class="stat-value">0</div>
+            <div class="stat-label">短链总数</div>
+          </div>
+        </article>
+        <article class="card stat-card">
+          <div class="stat-icon stat-icon-green" aria-hidden="true">↗</div>
+          <div class="stat-content">
+            <div id="statRedirectTests" class="stat-value">0</div>
+            <div class="stat-label">重定向测试</div>
+          </div>
+        </article>
+        <article class="card stat-card">
+          <div class="stat-icon stat-icon-purple" aria-hidden="true">▦</div>
+          <div class="stat-content">
+            <div id="statQrCount" class="stat-value">0</div>
+            <div class="stat-label">二维码生成</div>
+          </div>
+        </article>
+        <article class="card stat-card">
+          <div class="stat-icon stat-icon-orange" aria-hidden="true">◎</div>
+          <div class="stat-content">
+            <div id="statResolvedCount" class="stat-value">0</div>
+            <div class="stat-label">重定向解析</div>
+          </div>
+        </article>
       </section>
 
-      <section class="layout">
+      <section class="content-grid">
         <form id="createForm" class="card form-panel" novalidate>
           <div class="panel-head">
-            <h2>创建单条短链</h2>
-            <p>对应文档：`/v2/sl/link/create`</p>
+            <div>
+              <div class="panel-title-row">
+                <span class="panel-icon" aria-hidden="true">⚡</span>
+                <h2>创建短链</h2>
+              </div>
+              <p>输入长链接创建短链，支持分组、新建分组、自有域名、二维码和重定向调试。</p>
+            </div>
           </div>
 
           <select name="project_id" id="projectSelect" hidden aria-hidden="true"></select>
 
-          <div class="form-grid">
-            <label class="field field-span-2" data-key-field>
-              <span>API Key（apikey）</span>
-              <input
-                type="password"
-                name="apikey"
-                placeholder="若服务端已配置 XIAOMARK_API_KEY，可留空"
-                autocomplete="off"
-              />
-              <small>如果未在服务端配置，会用这里输入的 apikey 拉取项目/分组/域名并创建短链。</small>
-            </label>
-
-            <div class="field field-span-2 combo-field">
-              <span>分组（group_id）<em>*</em></span>
-              <div class="combo">
-                <select name="group_id" id="groupSelect" required disabled>
-                  <option value="">正在加载默认项目分组...</option>
-                </select>
-                <button type="button" class="btn btn-ghost btn-mini" id="refreshGroupsBtn" disabled>
-                  刷新分组
-                </button>
-                <button type="button" class="btn btn-primary btn-mini" id="openCreateGroupBtn" disabled>
-                  新建分组
-                </button>
+          <div class="form-stack">
+            <section class="form-section" aria-labelledby="section-basic">
+              <div class="section-heading">
+                <div class="section-index">01</div>
+                <div>
+                  <h3 id="section-basic">基础信息</h3>
+                  <p>先确定鉴权与分组，再填写目标链接。</p>
+                </div>
               </div>
-              <small>分组列表默认使用项目“我的项目”（若不存在则自动回退到第一个项目）。</small>
-            </div>
 
-            <label class="field field-span-2">
-              <span>目标链接（target_url）<em>*</em></span>
-              <input
-                type="url"
-                name="target_url"
-                required
-                placeholder="https://example.com/path"
-                inputmode="url"
-              />
-            </label>
-          </div>
-
-          <details class="more-options" id="moreOptions">
-            <summary>
-              <span>更多选项（可选）</span>
-              <span class="summary-note">名称、自有域名、自定义后缀、Webhook、访问过滤等</span>
-            </summary>
-            <div class="more-options-body">
               <div class="form-grid">
-                <label class="field field-span-2">
-                  <span>短链名称（name）</span>
-                  <input type="text" name="name" maxlength="128" placeholder="可选，最长 128 字符" />
+                <label class="field field-span-2" data-key-field>
+                  <span>API Key（apikey）</span>
+                  <input
+                    type="password"
+                    name="apikey"
+                    placeholder="若服务端已配置 XIAOMARK_API_KEY，可留空"
+                    autocomplete="off"
+                  />
+                  <small>服务端未配置时，将使用这里输入的 apikey 拉取元数据并创建短链。</small>
                 </label>
 
                 <div class="field field-span-2 combo-field">
-                  <span>自有域名（domain）</span>
+                  <span>分组（group_id）<em>*</em></span>
                   <div class="combo">
-                    <select name="domain" id="domainSelect">
-                      <option value="">默认域名（不指定，使用小码默认）</option>
+                    <select name="group_id" id="groupSelect" required disabled>
+                      <option value="">正在加载默认项目分组...</option>
                     </select>
-                    <button type="button" class="btn btn-ghost btn-mini" id="refreshDomainsBtn">
-                      刷新域名
+                    <button type="button" class="btn btn-ghost btn-mini" id="refreshGroupsBtn" disabled>
+                      刷新分组
+                    </button>
+                    <button type="button" class="btn btn-primary btn-mini" id="openCreateGroupBtn" disabled>
+                      新建分组
                     </button>
                   </div>
-                  <small>使用原生下拉；需要最新数据时点击右侧“刷新域名”。</small>
+                  <small>优先使用“我的项目”，若不存在则自动回退到首个项目。</small>
                 </div>
+              </div>
+            </section>
 
-                <label class="field">
-                  <span>自定义后缀（key）</span>
-                  <input
-                    type="text"
-                    name="key"
-                    maxlength="32"
-                    pattern="[A-Za-z0-9_-]{0,32}"
-                    placeholder="可选，A-Z a-z 0-9 _ -"
-                  />
-                </label>
+            <section class="form-section form-section-primary" aria-labelledby="section-target">
+              <div class="section-heading">
+                <div class="section-index">02</div>
+                <div>
+                  <h3 id="section-target">目标链接</h3>
+                  <p>仅支持 `http://` / `https://` 开头的有效链接。</p>
+                </div>
+              </div>
 
-                <label class="field">
-                  <span>随机后缀长度（key_length）</span>
-                  <select name="key_length" id="keyLengthSelect">
-                    <option value="4">4（默认）</option>
-                    <option value="5">5</option>
-                    <option value="6">6</option>
-                    <option value="7">7</option>
-                    <option value="8">8</option>
-                  </select>
-                </label>
-
+              <div class="form-grid">
                 <label class="field field-span-2">
-                  <span>Webhook 推送地址（展示/记录用）</span>
+                  <span>目标链接（target_url）<em>*</em></span>
                   <input
                     type="url"
-                    name="webhook_callback_url"
-                    id="webhookCallbackUrl"
-                    placeholder="用于记录你在小码后台 API 设置中配置的推送地址"
-                  />
-                  <small>此字段不会提交给“创建单条短链”接口，仅便于前端记录和部署时核对配置。</small>
-                </label>
-
-                <label class="field field-span-2">
-                  <span>Webhook 场景（webhook_scene）</span>
-                  <input
-                    type="text"
-                    name="webhook_scene"
-                    maxlength="128"
-                    placeholder="仅 webhook 开启时生效，例如 foodtalks"
+                    name="target_url"
+                    required
+                    placeholder="粘贴长链接，例如：https://example.com/very/long/url"
+                    inputmode="url"
                   />
                 </label>
               </div>
+            </section>
 
-              <div class="toggles">
-                <label class="toggle">
-                  <input type="checkbox" name="escape_from_wechat" />
-                  <span>微信内强制浏览器打开（默认关闭）</span>
-                </label>
-                <label class="toggle">
-                  <input type="checkbox" name="advanced_bot_detection" checked />
-                  <span>深度过滤机器访问（默认开启）</span>
-                </label>
-                <label class="toggle">
-                  <input type="checkbox" name="webhook" checked />
-                  <span>开启事件推送（webhook，默认开启）</span>
-                </label>
+            <details class="more-options" id="moreOptions">
+              <summary>
+                <span>更多选项</span>
+                <span class="summary-note">名称、自有域名、自定义后缀、Webhook、访问过滤等</span>
+              </summary>
+
+              <div class="more-options-body">
+                <section class="form-section" aria-labelledby="section-advanced-fields">
+                  <div class="section-heading compact">
+                    <div class="section-index">03</div>
+                    <div>
+                      <h3 id="section-advanced-fields">高级字段</h3>
+                      <p>用于命名、品牌域名、后缀与 webhook 配置。</p>
+                    </div>
+                  </div>
+
+                  <div class="form-grid">
+                    <label class="field field-span-2">
+                      <span>短链名称（name）</span>
+                      <input type="text" name="name" maxlength="128" placeholder="可选，最长 128 字符" />
+                    </label>
+
+                    <div class="field field-span-2 combo-field">
+                      <span>自有域名（domain）</span>
+                      <div class="combo">
+                        <select name="domain" id="domainSelect">
+                          <option value="">默认域名（不指定）</option>
+                        </select>
+                        <button type="button" class="btn btn-ghost btn-mini" id="refreshDomainsBtn">
+                          刷新域名
+                        </button>
+                      </div>
+                      <small>使用原生下拉，点击右侧按钮获取最新域名列表。</small>
+                    </div>
+
+                    <label class="field">
+                      <span>自定义后缀（key）</span>
+                      <input
+                        type="text"
+                        name="key"
+                        maxlength="32"
+                        pattern="[A-Za-z0-9_-]{0,32}"
+                        placeholder="可选，A-Z a-z 0-9 _ -"
+                      />
+                    </label>
+
+                    <label class="field">
+                      <span>随机后缀长度（key_length）</span>
+                      <select name="key_length" id="keyLengthSelect">
+                        <option value="4">4（默认）</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                      </select>
+                    </label>
+
+                    <label class="field field-span-2">
+                      <span>Webhook 推送地址（展示/记录用）</span>
+                      <input
+                        type="url"
+                        name="webhook_callback_url"
+                        id="webhookCallbackUrl"
+                        placeholder="用于记录你在小码后台配置的 webhook 地址"
+                      />
+                      <small>该字段不会提交给创建接口，仅用于本地记录与核对。</small>
+                    </label>
+
+                    <label class="field field-span-2">
+                      <span>Webhook 场景（webhook_scene）</span>
+                      <input
+                        type="text"
+                        name="webhook_scene"
+                        maxlength="128"
+                        placeholder="仅 webhook 开启时生效，例如 foodtalks"
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="form-section" aria-labelledby="section-flags">
+                  <div class="section-heading compact">
+                    <div class="section-index">04</div>
+                    <div>
+                      <h3 id="section-flags">访问与推送开关</h3>
+                      <p>互斥规则会在提交时校验。</p>
+                    </div>
+                  </div>
+
+                  <div class="toggles">
+                    <label class="toggle">
+                      <input type="checkbox" name="escape_from_wechat" />
+                      <span>微信内强制浏览器打开（默认关闭）</span>
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" name="advanced_bot_detection" checked />
+                      <span>深度过滤机器访问（默认开启）</span>
+                    </label>
+                    <label class="toggle">
+                      <input type="checkbox" name="webhook" checked />
+                      <span>开启事件推送（webhook，默认开启）</span>
+                    </label>
+                  </div>
+                </section>
               </div>
-            </div>
-          </details>
+            </details>
+          </div>
 
           <div id="formError" class="inline-error" hidden></div>
 
           <div class="actions">
-            <button type="submit" class="btn btn-primary" id="submitBtn">创建短链</button>
+            <button type="submit" class="btn btn-primary" id="submitBtn">立即生成短链</button>
             <button type="reset" class="btn btn-ghost">清空</button>
           </div>
         </form>
 
-        <aside class="card result-panel">
-          <div class="panel-head">
-            <h2>结果</h2>
-            <p>展示返回短链和原始 JSON</p>
+        <aside class="card result-panel" aria-labelledby="result-panel-title">
+          <div class="panel-head panel-head-tight">
+            <div>
+              <div class="panel-kicker">Result</div>
+              <h2 id="result-panel-title">创建结果</h2>
+              <p>短链地址、状态、二维码与重定向解析。</p>
+            </div>
           </div>
 
-          <section class="result-block">
+          <section class="result-block result-success">
             <div class="result-label">短链地址</div>
-            <div id="linkOutput" class="link-output empty">尚未创建</div>
-            <div class="result-actions">
-              <button type="button" class="btn btn-ghost" id="copyLinkBtn" disabled>复制短链</button>
-              <a id="openLinkBtn" class="btn btn-ghost disabled-link" href="#" target="_blank" rel="noreferrer">打开</a>
+            <div id="linkOutput" class="link-output empty" aria-live="polite">尚未创建</div>
+            <div class="result-actions compact">
+              <button type="button" class="btn btn-ghost" id="copyLinkBtn" disabled>复制</button>
+              <button type="button" class="btn btn-ghost" id="showQrBtn" disabled>二维码</button>
+              <button type="button" class="btn btn-ghost" id="resolveRedirectBtn" disabled>解析重定向</button>
+              <a id="openLinkBtn" class="btn btn-primary disabled-link" href="#" target="_blank" rel="noreferrer">重定向打开</a>
             </div>
           </section>
 
           <section class="result-block">
-            <div class="result-label">状态</div>
-            <div id="statusOutput" class="status-output">等待提交</div>
-            <div id="metaOutput" class="meta-output"></div>
+            <div class="result-label">请求状态</div>
+            <div id="statusOutput" class="status-output" aria-live="polite">等待提交</div>
+            <div id="metaOutput" class="meta-output" aria-live="polite"></div>
+          </section>
+
+          <section class="result-block">
+            <div class="result-label">重定向解析</div>
+            <div id="resolveOutput" class="status-output" aria-live="polite">尚未解析</div>
+            <div id="resolveMetaOutput" class="meta-output" aria-live="polite"></div>
           </section>
 
           <section class="result-block">
@@ -205,31 +302,126 @@
           </section>
         </aside>
       </section>
+
+      <section class="card list-panel" aria-labelledby="historyTitle">
+        <div class="panel-head list-panel-head">
+          <div>
+            <div class="panel-title-row">
+              <span class="panel-icon panel-icon-muted" aria-hidden="true">⟲</span>
+              <h2 id="historyTitle">短链列表 <span id="historyCount" class="title-count">(0)</span></h2>
+            </div>
+            <p>本地记录近期创建的短链，支持搜索、导出、二维码与重定向调试。</p>
+          </div>
+          <div class="list-head-actions">
+            <button type="button" class="btn btn-ghost" id="clearHistoryBtn">清空列表</button>
+            <button type="button" class="btn btn-ghost" id="exportHistoryBtn">导出</button>
+          </div>
+        </div>
+
+        <div class="list-toolbar">
+          <label class="toolbar-search">
+            <input type="search" id="historySearchInput" placeholder="搜索短链、目标链接、名称..." />
+          </label>
+          <select id="historyGroupFilter" aria-label="按分组筛选">
+            <option value="">全部分组</option>
+          </select>
+          <select id="historyStatusFilter" aria-label="按状态筛选">
+            <option value="all">全部状态</option>
+            <option value="active">可用</option>
+            <option value="resolved">已解析重定向</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>短链</th>
+                <th>目标链接</th>
+                <th>分组</th>
+                <th>重定向测试</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+          <div id="historyEmptyHint" class="table-empty" hidden>暂无短链记录，先在上方创建一条短链。</div>
+        </div>
+      </section>
+
+      <footer class="app-footer">
+        <p>© 2026 Xiaomark ShortLink Tool</p>
+        <div class="app-footer-links">
+          <a href="https://xiaomark.com/help/api/shortlink-api-create-link" target="_blank" rel="noreferrer">API 文档</a>
+          <a href="#createForm">创建短链</a>
+          <a href="#historyTitle">短链列表</a>
+        </div>
+      </footer>
     </main>
 
     <dialog id="groupModal" class="modal">
       <form method="dialog" class="modal-card" id="groupModalForm" novalidate>
         <div class="modal-head">
-          <h3>新建分组</h3>
+          <div>
+            <div class="panel-kicker">Create Group</div>
+            <h3>新建分组</h3>
+          </div>
           <button type="button" class="icon-btn" id="closeGroupModalBtn" aria-label="关闭">✕</button>
         </div>
+
         <div class="modal-body">
           <div class="field">
             <span>当前项目</span>
             <div id="groupModalProjectInfo" class="readonly-box">未选择项目</div>
           </div>
+
           <label class="field">
             <span>分组名称（name）<em>*</em></span>
             <input type="text" id="newGroupName" maxlength="64" placeholder="例如：FoodTalks 活动页" required />
+            <small>小码接口限制长度不能超过 64 字符。</small>
           </label>
+
           <div id="groupModalError" class="inline-error" hidden></div>
-          <div id="groupModalStatus" class="status-output">填写分组名称后提交</div>
+          <div id="groupModalStatus" class="status-output" aria-live="polite">填写分组名称后提交</div>
         </div>
+
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="cancelGroupModalBtn">取消</button>
           <button type="submit" class="btn btn-primary" id="createGroupBtn">创建分组</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="qrModal" class="modal">
+      <div class="modal-card qr-modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="panel-kicker">QR Code</div>
+            <h3 id="qrModalTitle">短链二维码</h3>
+          </div>
+          <button type="button" class="icon-btn" id="closeQrModalBtn" aria-label="关闭">✕</button>
+        </div>
+
+        <div class="modal-body qr-modal-body">
+          <div id="qrModalError" class="inline-error" hidden></div>
+          <div class="qr-preview">
+            <img id="qrModalImage" alt="短链二维码" hidden />
+            <div id="qrModalPlaceholder" class="qr-placeholder">正在生成二维码...</div>
+          </div>
+          <div class="qr-meta">
+            <div class="result-label">短链地址</div>
+            <div id="qrModalText" class="link-output empty">尚未生成</div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="copyQrSourceBtn" disabled>复制短链</button>
+          <button type="button" class="btn btn-ghost" id="downloadQrBtn" disabled>下载二维码</button>
+          <button type="button" class="btn btn-primary" id="openQrSourceBtn" disabled>重定向打开</button>
+          <button type="button" class="btn btn-ghost" id="cancelQrModalBtn">关闭</button>
+        </div>
+      </div>
     </dialog>
 
     <script type="module" src="/app.js"></script>

@@ -18,6 +18,24 @@ const metaOutput = document.querySelector("#metaOutput");
 const jsonOutput = document.querySelector("#jsonOutput");
 const copyLinkBtn = document.querySelector("#copyLinkBtn");
 const openLinkBtn = document.querySelector("#openLinkBtn");
+const showQrBtn = document.querySelector("#showQrBtn");
+const resolveRedirectBtn = document.querySelector("#resolveRedirectBtn");
+const resolveOutput = document.querySelector("#resolveOutput");
+const resolveMetaOutput = document.querySelector("#resolveMetaOutput");
+
+const statTotalLinks = document.querySelector("#statTotalLinks");
+const statRedirectTests = document.querySelector("#statRedirectTests");
+const statQrCount = document.querySelector("#statQrCount");
+const statResolvedCount = document.querySelector("#statResolvedCount");
+
+const historyCount = document.querySelector("#historyCount");
+const historySearchInput = document.querySelector("#historySearchInput");
+const historyGroupFilter = document.querySelector("#historyGroupFilter");
+const historyStatusFilter = document.querySelector("#historyStatusFilter");
+const exportHistoryBtn = document.querySelector("#exportHistoryBtn");
+const clearHistoryBtn = document.querySelector("#clearHistoryBtn");
+const historyTableBody = document.querySelector("#historyTableBody");
+const historyEmptyHint = document.querySelector("#historyEmptyHint");
 
 const groupModal = document.querySelector("#groupModal");
 const groupModalForm = document.querySelector("#groupModalForm");
@@ -29,12 +47,26 @@ const closeGroupModalBtn = document.querySelector("#closeGroupModalBtn");
 const cancelGroupModalBtn = document.querySelector("#cancelGroupModalBtn");
 const createGroupBtn = document.querySelector("#createGroupBtn");
 
+const qrModal = document.querySelector("#qrModal");
+const qrModalTitle = document.querySelector("#qrModalTitle");
+const qrModalImage = document.querySelector("#qrModalImage");
+const qrModalPlaceholder = document.querySelector("#qrModalPlaceholder");
+const qrModalText = document.querySelector("#qrModalText");
+const qrModalError = document.querySelector("#qrModalError");
+const closeQrModalBtn = document.querySelector("#closeQrModalBtn");
+const cancelQrModalBtn = document.querySelector("#cancelQrModalBtn");
+const copyQrSourceBtn = document.querySelector("#copyQrSourceBtn");
+const downloadQrBtn = document.querySelector("#downloadQrBtn");
+const openQrSourceBtn = document.querySelector("#openQrSourceBtn");
+
 const webhookCallbackUrlInput = document.querySelector("#webhookCallbackUrl");
 
 const LS_KEYS = {
   webhookCallbackUrl: "shorturl:webhook_callback_url",
+  history: "shorturl:history:v1",
 };
 const DEFAULT_PROJECT_NAME = "我的项目";
+const MAX_HISTORY_ITEMS = 200;
 
 const state = {
   config: null,
@@ -52,6 +84,16 @@ const state = {
     projects: 0,
     groups: 0,
     domains: 0,
+  },
+  historyItems: [],
+  qrModal: {
+    sourceUrl: "",
+    dataUrl: "",
+  },
+  filters: {
+    search: "",
+    group: "",
+    status: "all",
   },
 };
 
@@ -116,6 +158,8 @@ function setLinkResult(url) {
     linkOutput.className = "link-output empty";
     linkOutput.textContent = "尚未创建";
     copyLinkBtn.disabled = true;
+    if (showQrBtn) showQrBtn.disabled = true;
+    if (resolveRedirectBtn) resolveRedirectBtn.disabled = true;
     openLinkBtn.classList.add("disabled-link");
     openLinkBtn.href = "#";
     return;
@@ -124,8 +168,10 @@ function setLinkResult(url) {
   linkOutput.className = "link-output";
   linkOutput.innerHTML = `<a href="${escapeHtml(state.latestLinkUrl)}" target="_blank" rel="noreferrer">${escapeHtml(state.latestLinkUrl)}</a>`;
   copyLinkBtn.disabled = false;
+  if (showQrBtn) showQrBtn.disabled = false;
+  if (resolveRedirectBtn) resolveRedirectBtn.disabled = false;
   openLinkBtn.classList.remove("disabled-link");
-  openLinkBtn.href = state.latestLinkUrl;
+  openLinkBtn.href = buildRedirectProxyUrl(state.latestLinkUrl);
 }
 
 function setBadge(el, text, kind = "") {
@@ -141,6 +187,639 @@ function getCurrentApiKey() {
 function getApiKeyRequestPart() {
   const apikey = getCurrentApiKey();
   return apikey ? { apikey } : {};
+}
+
+function buildRedirectProxyUrl(url) {
+  const text = normalizeText(url);
+  return text ? `/go?url=${encodeURIComponent(text)}` : "#";
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function setResolveText(text, kind = "") {
+  if (!resolveOutput) return;
+  resolveOutput.textContent = text;
+  resolveOutput.className = `status-output${kind ? ` ${kind}` : ""}`;
+}
+
+function setResolveMetaText(text = "") {
+  if (!resolveMetaOutput) return;
+  resolveMetaOutput.textContent = text;
+}
+
+function safeLocalStorageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function makeHistoryId() {
+  return `h_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function extractGroupNameFromLabel(label) {
+  const text = normalizeText(label);
+  if (!text) return "";
+  const idx = text.indexOf(" (");
+  return idx > 0 ? text.slice(0, idx) : text;
+}
+
+function normalizeHistoryItem(raw) {
+  const item = raw && typeof raw === "object" ? raw : {};
+  const linkUrl = normalizeText(item.linkUrl || item.link_url);
+  const targetUrl = normalizeText(item.targetUrl || item.target_url);
+  if (!linkUrl || !targetUrl) return null;
+
+  return {
+    id: normalizeText(item.id) || makeHistoryId(),
+    linkUrl,
+    targetUrl,
+    name: normalizeText(item.name),
+    domain: normalizeText(item.domain),
+    groupId: normalizeText(item.groupId || item.group_id),
+    groupName: normalizeText(item.groupName || item.group_name),
+    status: normalizeText(item.status) || "active",
+    createdAt: normalizeText(item.createdAt || item.created_at) || new Date().toISOString(),
+    updatedAt: normalizeText(item.updatedAt || item.updated_at) || new Date().toISOString(),
+    redirectTestCount: Number(item.redirectTestCount || item.redirect_test_count || 0) || 0,
+    qrGeneratedCount: Number(item.qrGeneratedCount || item.qr_generated_count || 0) || 0,
+    redirectResolvedCount: Number(item.redirectResolvedCount || item.redirect_resolved_count || 0) || 0,
+    lastResolvedFinalUrl: normalizeText(item.lastResolvedFinalUrl || item.last_resolved_final_url),
+    lastResolvedAt: normalizeText(item.lastResolvedAt || item.last_resolved_at),
+    resolved: Boolean(item.resolved || item.lastResolvedFinalUrl || item.last_resolved_final_url),
+  };
+}
+
+function loadHistoryItems() {
+  const raw = safeLocalStorageGet(LS_KEYS.history);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeHistoryItem).filter(Boolean).slice(0, MAX_HISTORY_ITEMS);
+  } catch {
+    return [];
+  }
+}
+
+function persistHistoryItems() {
+  safeLocalStorageSet(LS_KEYS.history, JSON.stringify(state.historyItems.slice(0, MAX_HISTORY_ITEMS)));
+}
+
+function setHistoryItems(items) {
+  state.historyItems = (Array.isArray(items) ? items : [])
+    .map(normalizeHistoryItem)
+    .filter(Boolean)
+    .slice(0, MAX_HISTORY_ITEMS);
+  persistHistoryItems();
+  renderDashboardHistory();
+}
+
+function getHistoryStats() {
+  return state.historyItems.reduce(
+    (acc, item) => {
+      acc.total += 1;
+      acc.redirectTests += Number(item.redirectTestCount || 0);
+      acc.qrCount += Number(item.qrGeneratedCount || 0);
+      acc.resolvedCount += Number(item.redirectResolvedCount || 0);
+      return acc;
+    },
+    { total: 0, redirectTests: 0, qrCount: 0, resolvedCount: 0 }
+  );
+}
+
+function renderDashboardStats() {
+  const stats = getHistoryStats();
+  if (statTotalLinks) statTotalLinks.textContent = String(stats.total);
+  if (statRedirectTests) statRedirectTests.textContent = String(stats.redirectTests);
+  if (statQrCount) statQrCount.textContent = String(stats.qrCount);
+  if (statResolvedCount) statResolvedCount.textContent = String(stats.resolvedCount);
+  if (historyCount) historyCount.textContent = `(${stats.total})`;
+}
+
+function getFilteredHistoryItems() {
+  const search = normalizeText(state.filters.search).toLowerCase();
+  const group = normalizeText(state.filters.group);
+  const status = normalizeText(state.filters.status) || "all";
+
+  return state.historyItems.filter((item) => {
+    if (group && item.groupId !== group) return false;
+    if (status === "resolved" && !item.resolved) return false;
+    if (status === "active" && item.status !== "active") return false;
+    if (!search) return true;
+    const haystack = [
+      item.linkUrl,
+      item.targetUrl,
+      item.name,
+      item.groupName,
+      item.groupId,
+      item.lastResolvedFinalUrl,
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .toLowerCase();
+    return haystack.includes(search);
+  });
+}
+
+function renderHistoryGroupFilterOptions() {
+  if (!historyGroupFilter) return;
+  const previous = historyGroupFilter.value;
+  const groups = new Map();
+  for (const item of state.historyItems) {
+    if (!item.groupId) continue;
+    if (!groups.has(item.groupId)) {
+      groups.set(item.groupId, item.groupName || item.groupId);
+    }
+  }
+
+  historyGroupFilter.innerHTML = `<option value="">全部分组</option>`;
+  for (const [groupId, groupName] of groups.entries()) {
+    const opt = document.createElement("option");
+    opt.value = groupId;
+    opt.textContent = groupName || groupId;
+    historyGroupFilter.appendChild(opt);
+  }
+  if ([...historyGroupFilter.options].some((opt) => opt.value === previous)) {
+    historyGroupFilter.value = previous;
+  }
+}
+
+function renderHistoryTable() {
+  if (!historyTableBody) return;
+  const items = getFilteredHistoryItems();
+  historyTableBody.innerHTML = "";
+
+  if (historyEmptyHint) {
+    historyEmptyHint.hidden = items.length > 0;
+  }
+
+  if (items.length === 0) return;
+
+  const rowsHtml = items
+    .map((item) => {
+      const shortLabel = item.name || item.linkUrl;
+      const targetSub = item.lastResolvedFinalUrl
+        ? `已解析 → ${escapeHtml(item.lastResolvedFinalUrl)}`
+        : escapeHtml(item.targetUrl);
+      const statusPill = item.resolved
+        ? `<span class="table-pill info">已解析</span>`
+        : `<span class="table-pill success">可用</span>`;
+      const createdAtText = formatDateTime(item.createdAt);
+      return `
+        <tr class="history-row" data-id="${escapeHtml(item.id)}">
+          <td class="col-short">
+            <a class="table-link" href="${escapeHtml(buildRedirectProxyUrl(item.linkUrl))}" target="_blank" rel="noreferrer">${escapeHtml(shortLabel)}</a>
+            <div class="table-subtext">${escapeHtml(item.linkUrl)}</div>
+          </td>
+          <td class="col-target">
+            <div class="table-subtext" title="${escapeHtml(item.targetUrl)}">${escapeHtml(item.targetUrl)}</div>
+            ${
+              item.lastResolvedFinalUrl
+                ? `<div class="table-subtext" title="${escapeHtml(item.lastResolvedFinalUrl)}">${targetSub}</div>`
+                : ""
+            }
+          </td>
+          <td class="col-group">
+            <div>${escapeHtml(item.groupName || "未记录")}</div>
+            <div class="table-subtext">${escapeHtml(item.groupId || "-")}</div>
+          </td>
+          <td class="col-clicks">
+            <div>${Number(item.redirectTestCount || 0)}</div>
+            <div class="table-subtext">${createdAtText || "-"}</div>
+          </td>
+          <td class="col-status">${statusPill}</td>
+          <td class="col-actions">
+            <div class="table-actions">
+              <button type="button" class="action-btn" data-action="copy" data-id="${escapeHtml(item.id)}">复制</button>
+              <button type="button" class="action-btn" data-action="qr" data-id="${escapeHtml(item.id)}">二维码</button>
+              <button type="button" class="action-btn" data-action="redirect" data-id="${escapeHtml(item.id)}">重定向</button>
+              <button type="button" class="action-btn" data-action="resolve" data-id="${escapeHtml(item.id)}">解析</button>
+              <button type="button" class="action-btn danger" data-action="delete" data-id="${escapeHtml(item.id)}">删除</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  historyTableBody.innerHTML = rowsHtml;
+}
+
+function renderDashboardHistory() {
+  renderDashboardStats();
+  renderHistoryGroupFilterOptions();
+  renderHistoryTable();
+}
+
+function findHistoryItemById(id) {
+  return state.historyItems.find((item) => item.id === id) || null;
+}
+
+function updateHistoryItem(id, updater) {
+  const index = state.historyItems.findIndex((item) => item.id === id);
+  if (index < 0) return null;
+  const next = updater({ ...state.historyItems[index] });
+  if (!next) return null;
+  state.historyItems[index] = normalizeHistoryItem({
+    ...next,
+    updatedAt: new Date().toISOString(),
+  });
+  persistHistoryItems();
+  renderDashboardHistory();
+  return state.historyItems[index];
+}
+
+function removeHistoryItem(id) {
+  state.historyItems = state.historyItems.filter((item) => item.id !== id);
+  persistHistoryItems();
+  renderDashboardHistory();
+}
+
+function upsertHistoryItemFromCreate({ linkUrl, payload, responseData }) {
+  const normalizedLink = normalizeText(linkUrl);
+  const normalizedTarget = normalizeText(payload?.target_url);
+  if (!normalizedLink || !normalizedTarget) return;
+
+  const groupLabel = groupSelect?.selectedOptions?.[0]?.textContent || "";
+  const groupName = extractGroupNameFromLabel(groupLabel);
+  const existingIndex = state.historyItems.findIndex((item) => item.linkUrl === normalizedLink);
+  const nowIso = new Date().toISOString();
+  const base = {
+    id: existingIndex >= 0 ? state.historyItems[existingIndex].id : makeHistoryId(),
+    linkUrl: normalizedLink,
+    targetUrl: normalizedTarget,
+    name: normalizeText(payload?.name),
+    domain: normalizeText(payload?.domain),
+    groupId: normalizeText(payload?.group_id),
+    groupName,
+    status: "active",
+    createdAt: existingIndex >= 0 ? state.historyItems[existingIndex].createdAt : nowIso,
+    updatedAt: nowIso,
+    redirectTestCount: existingIndex >= 0 ? state.historyItems[existingIndex].redirectTestCount : 0,
+    qrGeneratedCount: existingIndex >= 0 ? state.historyItems[existingIndex].qrGeneratedCount : 0,
+    redirectResolvedCount: existingIndex >= 0 ? state.historyItems[existingIndex].redirectResolvedCount : 0,
+    lastResolvedFinalUrl: existingIndex >= 0 ? state.historyItems[existingIndex].lastResolvedFinalUrl : "",
+    lastResolvedAt: existingIndex >= 0 ? state.historyItems[existingIndex].lastResolvedAt : "",
+    resolved: existingIndex >= 0 ? state.historyItems[existingIndex].resolved : false,
+  };
+
+  // Keep the newest records at the top.
+  const normalized = normalizeHistoryItem(base);
+  if (!normalized) return;
+  if (existingIndex >= 0) {
+    state.historyItems.splice(existingIndex, 1);
+  }
+  state.historyItems.unshift(normalized);
+  state.historyItems = state.historyItems.slice(0, MAX_HISTORY_ITEMS);
+  persistHistoryItems();
+  renderDashboardHistory();
+}
+
+function exportHistoryAsJson() {
+  const blob = new Blob([JSON.stringify(state.historyItems, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `shortlinks-${Date.now()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderQrModalState({ loading = false, error = "", dataUrl = "", text = "" } = {}) {
+  if (!qrModal) return;
+  if (qrModalError) {
+    qrModalError.hidden = !error;
+    qrModalError.textContent = error || "";
+  }
+
+  const hasData = Boolean(dataUrl);
+  state.qrModal.dataUrl = dataUrl || state.qrModal.dataUrl || "";
+  state.qrModal.sourceUrl = text || state.qrModal.sourceUrl || "";
+
+  if (qrModalImage) {
+    qrModalImage.hidden = !hasData;
+    if (hasData) qrModalImage.src = dataUrl;
+  }
+  if (qrModalPlaceholder) {
+    qrModalPlaceholder.hidden = hasData;
+    qrModalPlaceholder.textContent = loading
+      ? "正在生成二维码..."
+      : error
+      ? "二维码生成失败"
+      : "暂无二维码";
+  }
+  if (qrModalText) {
+    if (text) {
+      qrModalText.className = "link-output";
+      qrModalText.textContent = text;
+    } else if (!hasData) {
+      qrModalText.className = "link-output empty";
+      qrModalText.textContent = "尚未生成";
+    }
+  }
+
+  const disabled = loading || !hasData;
+  if (copyQrSourceBtn) copyQrSourceBtn.disabled = disabled;
+  if (downloadQrBtn) downloadQrBtn.disabled = disabled;
+  if (openQrSourceBtn) {
+    openQrSourceBtn.disabled = disabled;
+    openQrSourceBtn.classList.toggle("disabled-link", disabled);
+  }
+}
+
+function openDialog(dialogEl) {
+  if (!dialogEl) return;
+  if (typeof dialogEl.showModal === "function") {
+    dialogEl.showModal();
+  } else {
+    dialogEl.setAttribute("open", "");
+  }
+}
+
+function closeDialog(dialogEl) {
+  if (!dialogEl) return;
+  if (typeof dialogEl.close === "function") {
+    dialogEl.close();
+  } else {
+    dialogEl.removeAttribute("open");
+  }
+}
+
+async function generateQrForUrl(url, historyId = "") {
+  const sourceUrl = normalizeText(url);
+  if (!sourceUrl) return;
+
+  if (qrModalTitle) {
+    qrModalTitle.textContent = historyId ? "短链二维码（列表项）" : "短链二维码";
+  }
+
+  state.qrModal = { sourceUrl, dataUrl: "" };
+  renderQrModalState({ loading: true, text: sourceUrl });
+  openDialog(qrModal);
+
+  try {
+    const { res, data } = await postJSON("/api/tools/qrcode", { text: sourceUrl });
+    if (!res.ok || data?.code !== 0) {
+      throw new Error(data?.message || "二维码生成失败");
+    }
+    const dataUrl = normalizeText(data?.data?.data_url);
+    renderQrModalState({ loading: false, text: sourceUrl, dataUrl });
+    if (openQrSourceBtn) {
+      openQrSourceBtn.disabled = false;
+      openQrSourceBtn.classList.remove("disabled-link");
+      openQrSourceBtn.dataset.url = sourceUrl;
+    }
+
+    if (historyId) {
+      updateHistoryItem(historyId, (item) => ({
+        ...item,
+        qrGeneratedCount: Number(item.qrGeneratedCount || 0) + 1,
+      }));
+    }
+  } catch (error) {
+    renderQrModalState({
+      loading: false,
+      error: `二维码生成失败：${String(error.message || error)}`,
+      text: sourceUrl,
+    });
+    setStatus("二维码生成失败", "error");
+  }
+}
+
+async function resolveRedirectForUrl(url, historyId = "") {
+  const sourceUrl = normalizeText(url);
+  if (!sourceUrl) return;
+  setResolveText("重定向解析中...", "pending");
+  setResolveMetaText("");
+
+  try {
+    const { res, data } = await postJSON("/api/tools/resolve-redirect", { url: sourceUrl });
+    if (!res.ok || data?.code !== 0) {
+      throw new Error(data?.message || "重定向解析失败");
+    }
+
+    const finalUrl = normalizeText(data?.data?.final_url);
+    const redirected = Boolean(data?.data?.redirected);
+    const steps = Array.isArray(data?.data?.steps) ? data.data.steps : [];
+    const firstHop = steps.find((step) => step?.location)?.location || "";
+    const stepText = steps
+      .map((step) => `${step.status}${step.location ? ` → ${step.location}` : ""}`)
+      .join(" | ");
+
+    if (redirected && finalUrl) {
+      setResolveText(`已解析：${finalUrl}`, "success");
+    } else {
+      setResolveText("该链接未返回重定向（可能已直出内容）", "pending");
+    }
+    setResolveMetaText(stepText || "未获取到重定向链路信息");
+
+    if (historyId) {
+      updateHistoryItem(historyId, (item) => ({
+        ...item,
+        resolved: true,
+        lastResolvedFinalUrl: finalUrl || firstHop || item.targetUrl,
+        lastResolvedAt: new Date().toISOString(),
+        redirectResolvedCount: Number(item.redirectResolvedCount || 0) + 1,
+      }));
+    }
+  } catch (error) {
+    setResolveText(`解析失败：${String(error.message || error)}`, "error");
+    setResolveMetaText("请检查短链是否可访问，或稍后重试。");
+  }
+}
+
+function openRedirectForUrl(url, historyId = "") {
+  const sourceUrl = normalizeText(url);
+  if (!sourceUrl) return;
+  const redirectUrl = buildRedirectProxyUrl(sourceUrl);
+  window.open(redirectUrl, "_blank", "noopener,noreferrer");
+
+  if (historyId) {
+    updateHistoryItem(historyId, (item) => ({
+      ...item,
+      redirectTestCount: Number(item.redirectTestCount || 0) + 1,
+    }));
+  }
+}
+
+async function copyText(value) {
+  await navigator.clipboard.writeText(value);
+}
+
+async function handleHistoryAction(event) {
+  const button = event.target.closest("[data-action][data-id]");
+  if (!button) return;
+  const action = button.dataset.action;
+  const id = button.dataset.id;
+  const item = findHistoryItemById(id);
+  if (!item) return;
+
+  if (action === "delete") {
+    removeHistoryItem(id);
+    setStatus("已删除本地短链记录", "success");
+    return;
+  }
+
+  if (action === "copy") {
+    try {
+      await copyText(item.linkUrl);
+      setStatus("短链已复制到剪贴板", "success");
+    } catch {
+      setStatus("复制失败，请手动复制", "error");
+    }
+    return;
+  }
+
+  if (action === "qr") {
+    generateQrForUrl(item.linkUrl, id);
+    return;
+  }
+
+  if (action === "redirect") {
+    openRedirectForUrl(item.linkUrl, id);
+    setStatus("已打开重定向测试窗口", "success");
+    return;
+  }
+
+  if (action === "resolve") {
+    resolveRedirectForUrl(item.linkUrl, id);
+  }
+}
+
+function bindDashboardEvents() {
+  if (historySearchInput) {
+    historySearchInput.addEventListener("input", () => {
+      state.filters.search = historySearchInput.value;
+      renderHistoryTable();
+    });
+  }
+  if (historyGroupFilter) {
+    historyGroupFilter.addEventListener("change", () => {
+      state.filters.group = historyGroupFilter.value;
+      renderHistoryTable();
+    });
+  }
+  if (historyStatusFilter) {
+    historyStatusFilter.addEventListener("change", () => {
+      state.filters.status = historyStatusFilter.value || "all";
+      renderHistoryTable();
+    });
+  }
+  if (historyTableBody) {
+    historyTableBody.addEventListener("click", handleHistoryAction);
+  }
+  if (exportHistoryBtn) {
+    exportHistoryBtn.addEventListener("click", () => {
+      if (state.historyItems.length === 0) {
+        setStatus("暂无可导出的短链记录", "pending");
+        return;
+      }
+      exportHistoryAsJson();
+      setStatus("已导出本地短链记录", "success");
+    });
+  }
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener("click", () => {
+      if (state.historyItems.length === 0) return;
+      const confirmed = window.confirm("确认清空本地短链列表吗？此操作不会影响小码后台数据。");
+      if (!confirmed) return;
+      setHistoryItems([]);
+      setStatus("已清空本地短链列表", "success");
+    });
+  }
+
+  if (showQrBtn) {
+    showQrBtn.addEventListener("click", () => {
+      if (!state.latestLinkUrl) return;
+      const item = state.historyItems.find((it) => it.linkUrl === state.latestLinkUrl);
+      generateQrForUrl(state.latestLinkUrl, item?.id || "");
+    });
+  }
+  if (resolveRedirectBtn) {
+    resolveRedirectBtn.addEventListener("click", () => {
+      if (!state.latestLinkUrl) return;
+      const item = state.historyItems.find((it) => it.linkUrl === state.latestLinkUrl);
+      resolveRedirectForUrl(state.latestLinkUrl, item?.id || "");
+    });
+  }
+
+  if (closeQrModalBtn) closeQrModalBtn.addEventListener("click", () => closeDialog(qrModal));
+  if (cancelQrModalBtn) cancelQrModalBtn.addEventListener("click", () => closeDialog(qrModal));
+  if (qrModal) {
+    qrModal.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeDialog(qrModal);
+    });
+  }
+
+  if (copyQrSourceBtn) {
+    copyQrSourceBtn.addEventListener("click", async () => {
+      if (!state.qrModal.sourceUrl) return;
+      try {
+        await copyText(state.qrModal.sourceUrl);
+        setStatus("短链已复制到剪贴板", "success");
+      } catch {
+        setStatus("复制失败，请手动复制", "error");
+      }
+    });
+  }
+
+  if (downloadQrBtn) {
+    downloadQrBtn.addEventListener("click", () => {
+      if (!state.qrModal.dataUrl) return;
+      const a = document.createElement("a");
+      a.href = state.qrModal.dataUrl;
+      a.download = `shortlink-qrcode-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+  }
+
+  if (openQrSourceBtn) {
+    openQrSourceBtn.addEventListener("click", () => {
+      if (!state.qrModal.sourceUrl) return;
+      openRedirectForUrl(state.qrModal.sourceUrl);
+    });
+  }
+}
+
+function initDashboardState() {
+  state.historyItems = loadHistoryItems();
+  state.filters.search = "";
+  state.filters.group = "";
+  state.filters.status = historyStatusFilter?.value || "all";
+  renderDashboardHistory();
+  setResolveText("尚未解析");
+  setResolveMetaText("");
+  renderQrModalState({ loading: false, text: "", dataUrl: "" });
 }
 
 function populateSelect(select, options, {
@@ -533,9 +1212,12 @@ async function handleSubmit(event) {
   setInlineError("");
   setStatus("请求发送中...", "pending");
   setMetaText("");
+  setResolveText("尚未解析");
+  setResolveMetaText("");
   submitBtn.disabled = true;
 
   const payload = collectPayload();
+  const payloadForHistory = { ...payload };
   const validationError = validatePayload(payload);
   if (validationError) {
     setInlineError(validationError);
@@ -570,6 +1252,13 @@ async function handleSubmit(event) {
     setLinkResult(linkUrl);
     setStatus(`成功：${data?.message || "创建成功"}`, "success");
     setMetaText("短链创建成功");
+    if (linkUrl) {
+      upsertHistoryItemFromCreate({
+        linkUrl,
+        payload: payloadForHistory,
+        responseData: data,
+      });
+    }
   } catch (error) {
     setStatus(`网络错误：${String(error.message || error)}`, "error");
     setInlineError("请求失败，请检查本地服务是否启动，以及服务器网络是否可访问小码 API。");
@@ -584,6 +1273,8 @@ function handleReset() {
   setInlineError("");
   setStatus("等待提交");
   setMetaText("");
+  setResolveText("尚未解析");
+  setResolveMetaText("");
   setJsonOutput({});
   setLinkResult("");
 
@@ -605,7 +1296,7 @@ function handleReset() {
 async function copyLatestLink() {
   if (!state.latestLinkUrl) return;
   try {
-    await navigator.clipboard.writeText(state.latestLinkUrl);
+    await copyText(state.latestLinkUrl);
     setStatus("短链已复制到剪贴板", "success");
   } catch {
     setStatus("复制失败，请手动复制", "error");
@@ -773,6 +1464,18 @@ function wireEvents() {
   form.addEventListener("submit", handleSubmit);
   form.addEventListener("reset", () => setTimeout(handleReset, 0));
   copyLinkBtn.addEventListener("click", copyLatestLink);
+  if (openLinkBtn) {
+    openLinkBtn.addEventListener("click", () => {
+      if (!state.latestLinkUrl) return;
+      const item = state.historyItems.find((it) => it.linkUrl === state.latestLinkUrl);
+      if (item) {
+        updateHistoryItem(item.id, (next) => ({
+          ...next,
+          redirectTestCount: Number(next.redirectTestCount || 0) + 1,
+        }));
+      }
+    });
+  }
 
   $("escape_from_wechat").addEventListener("change", syncMutualExclusionHints);
   $("advanced_bot_detection").addEventListener("change", syncMutualExclusionHints);
@@ -815,12 +1518,15 @@ function wireEvents() {
   });
 
   setupSelectRefreshTriggers();
+  bindDashboardEvents();
 }
 
 setJsonOutput({});
 setLinkResult("");
 setStatus("初始化中...");
 setMetaText("");
+setResolveText("尚未解析");
+setResolveMetaText("");
 populateSelect(projectSelect, [], { placeholder: "默认项目" });
 populateSelect(groupSelect, [], { placeholder: "正在加载默认项目分组..." });
 populateSelect(domainSelect, [], { placeholder: "默认域名（不指定，使用小码默认）" });
@@ -828,5 +1534,6 @@ groupSelect.disabled = true;
 refreshGroupsBtn.disabled = true;
 openCreateGroupBtn.disabled = true;
 
+initDashboardState();
 wireEvents();
 loadConfig();

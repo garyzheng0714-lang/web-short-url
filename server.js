@@ -2,6 +2,7 @@ import "dotenv/config";
 import crypto from "crypto";
 import express from "express";
 import path from "path";
+import QRCode from "qrcode";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,6 +32,18 @@ function getEffectiveApiKey(body = {}) {
 
 function cleanOptionalString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseHttpUrl(value) {
+  const text = cleanOptionalString(value);
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 function asBoolean(value, defaultValue = false) {
@@ -75,6 +88,61 @@ async function postXiaomark(pathname, payload, timeoutMs = 15000) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function resolveRedirectChain(inputUrl, { timeoutMs = 12000, maxHops = 5 } = {}) {
+  const steps = [];
+  let currentUrl = inputUrl;
+
+  for (let i = 0; i < maxHops; i += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(currentUrl, {
+        method: "GET",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "short-url-tool/1.0 (+local redirect resolver)",
+        },
+      });
+
+      const locationHeader = res.headers.get("location");
+      let nextLocation = "";
+      if (locationHeader) {
+        try {
+          nextLocation = new URL(locationHeader, currentUrl).toString();
+        } catch {
+          nextLocation = locationHeader;
+        }
+      }
+
+      steps.push({
+        url: currentUrl,
+        status: res.status,
+        location: nextLocation || undefined,
+      });
+
+      if (res.status < 300 || res.status >= 400 || !nextLocation) {
+        return {
+          redirected: steps.some((step) => step.status >= 300 && step.status < 400),
+          finalUrl: currentUrl,
+          steps,
+        };
+      }
+
+      currentUrl = nextLocation;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return {
+    redirected: true,
+    finalUrl: currentUrl,
+    steps,
+    truncated: true,
+  };
 }
 
 function sendError(res, status, message, detail) {
@@ -160,6 +228,9 @@ app.get("/api/config", (_req, res) => {
       createGroup: "/api/meta/groups/create",
       privateDomains: "/api/meta/private-domains",
       createLink: "/api/shortlinks/create",
+      qrCode: "/api/tools/qrcode",
+      resolveRedirect: "/api/tools/resolve-redirect",
+      redirectProxy: "/go",
     },
   });
 });
@@ -273,17 +344,8 @@ app.post("/api/shortlinks/create", async (req, res) => {
     if (!groupId) return sendError(res, 400, "group_id is required.");
     if (!targetUrl) return sendError(res, 400, "target_url is required.");
 
-    let parsedTarget;
-    try {
-      parsedTarget = new URL(targetUrl);
-    } catch {
-      return sendError(
-        res,
-        400,
-        "target_url must be a valid URL and start with http:// or https://"
-      );
-    }
-    if (!["http:", "https:"].includes(parsedTarget.protocol)) {
+    const parsedTarget = parseHttpUrl(targetUrl);
+    if (!parsedTarget) {
       return sendError(res, 400, "target_url must use http:// or https://");
     }
 
@@ -347,6 +409,80 @@ app.post("/api/shortlinks/create", async (req, res) => {
       String(error?.message || error)
     );
   }
+});
+
+app.post("/api/tools/qrcode", async (req, res) => {
+  try {
+    const text = cleanOptionalString(req.body?.text);
+    if (!text) return sendError(res, 400, "text is required.");
+    if (text.length > 2048) return sendError(res, 400, "text is too long (max 2048 chars).");
+
+    const parsed = parseHttpUrl(text);
+    if (!parsed) {
+      return sendError(res, 400, "text must be a valid http:// or https:// URL.");
+    }
+
+    const dataUrl = await QRCode.toDataURL(parsed.toString(), {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 320,
+      color: {
+        dark: "#1F2329",
+        light: "#FFFFFF",
+      },
+    });
+
+    return res.json({
+      code: 0,
+      message: "ok",
+      data: {
+        text: parsed.toString(),
+        data_url: dataUrl,
+      },
+    });
+  } catch (error) {
+    return sendError(res, 500, "Failed to generate QR code", String(error?.message || error));
+  }
+});
+
+app.post("/api/tools/resolve-redirect", async (req, res) => {
+  try {
+    const url = parseHttpUrl(req.body?.url);
+    if (!url) return sendError(res, 400, "url must be a valid http:// or https:// URL.");
+
+    const result = await resolveRedirectChain(url.toString(), {
+      timeoutMs: 10_000,
+      maxHops: 6,
+    });
+
+    return res.json({
+      code: 0,
+      message: "ok",
+      data: {
+        input_url: url.toString(),
+        redirected: Boolean(result.redirected),
+        final_url: result.finalUrl,
+        steps: result.steps,
+        truncated: Boolean(result.truncated),
+      },
+    });
+  } catch (error) {
+    const isAbort = error?.name === "AbortError";
+    return sendError(
+      res,
+      isAbort ? 504 : 500,
+      isAbort ? "Redirect resolve timeout" : "Failed to resolve redirect",
+      String(error?.message || error)
+    );
+  }
+});
+
+app.get("/go", (req, res) => {
+  const url = parseHttpUrl(req.query?.url);
+  if (!url) {
+    return res.status(400).send("Invalid url. Expect http:// or https://");
+  }
+  return res.redirect(302, url.toString());
 });
 
 app.get("*", (req, res, next) => {
