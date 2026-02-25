@@ -214,7 +214,7 @@ function requireApiKeyForMeta() {
   return "";
 }
 
-async function loadProjects({ forceUi = false } = {}) {
+async function loadProjects({ forceUi = false, background = false } = {}) {
   if (state.inflight.projects) return state.inflight.projects;
   const keyErr = requireApiKeyForMeta();
   if (keyErr) {
@@ -226,7 +226,9 @@ async function loadProjects({ forceUi = false } = {}) {
   if (!forceUi && now - state.lastFetchTick.projects < 300) return;
   state.lastFetchTick.projects = now;
 
-  setProjectsLoading(true);
+  if (!background) {
+    setProjectsLoading(true);
+  }
   setInlineError("");
 
   state.inflight.projects = (async () => {
@@ -247,11 +249,13 @@ async function loadProjects({ forceUi = false } = {}) {
         projectSelect.value = projects[0].id;
       }
 
-      setMetaText(`项目列表已更新（${projects.length} 项，缓存：${data?._meta?.cache || "unknown"}）`);
+      setMetaText(
+        `项目列表已更新（${projects.length} 项，缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
+      );
       refreshGroupsBtn.disabled = !projectSelect.value;
       openCreateGroupBtn.disabled = !projectSelect.value;
       if (projectSelect.value) {
-        await loadGroups();
+        await loadGroups({ background });
       } else {
         state.groups = [];
         populateSelect(groupSelect, [], { placeholder: "请先选择项目" });
@@ -260,11 +264,17 @@ async function loadProjects({ forceUi = false } = {}) {
     } catch (error) {
       setInlineError(`加载项目失败：${String(error.message || error)}`);
       setMetaText("项目列表加载失败");
-      state.projects = [];
-      populateSelect(projectSelect, [], { placeholder: "加载项目失败" });
-      projectSelect.disabled = false;
+      if (!background) {
+        state.projects = [];
+        populateSelect(projectSelect, [], { placeholder: "加载项目失败" });
+        projectSelect.disabled = false;
+      }
     } finally {
-      setProjectsLoading(false);
+      if (!background) {
+        setProjectsLoading(false);
+      } else {
+        projectSelect.disabled = false;
+      }
       state.inflight.projects = null;
     }
   })();
@@ -272,7 +282,7 @@ async function loadProjects({ forceUi = false } = {}) {
   return state.inflight.projects;
 }
 
-async function loadGroups({ forceUi = false } = {}) {
+async function loadGroups({ forceUi = false, background = false } = {}) {
   if (state.inflight.groups) return state.inflight.groups;
   const keyErr = requireApiKeyForMeta();
   if (keyErr) {
@@ -292,7 +302,9 @@ async function loadGroups({ forceUi = false } = {}) {
   if (!forceUi && now - state.lastFetchTick.groups < 300) return;
   state.lastFetchTick.groups = now;
 
-  setGroupsLoading(true);
+  if (!background) {
+    setGroupsLoading(true);
+  }
   setInlineError("");
 
   state.inflight.groups = (async () => {
@@ -316,14 +328,20 @@ async function loadGroups({ forceUi = false } = {}) {
       if (!groupSelect.value && groups.length === 1) {
         groupSelect.value = groups[0].id;
       }
-      setMetaText(`分组列表已更新（${groups.length} 项，缓存：${data?._meta?.cache || "unknown"}）`);
+      setMetaText(
+        `分组列表已更新（${groups.length} 项，缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
+      );
     } catch (error) {
       setInlineError(`加载分组失败：${String(error.message || error)}`);
       setMetaText("分组列表加载失败");
-      state.groups = [];
-      populateSelect(groupSelect, [], { placeholder: "加载分组失败" });
+      if (!background) {
+        state.groups = [];
+        populateSelect(groupSelect, [], { placeholder: "加载分组失败" });
+      }
     } finally {
-      setGroupsLoading(false, "加载分组中...");
+      if (!background) {
+        setGroupsLoading(false, "加载分组中...");
+      }
       groupSelect.disabled = !projectId;
       refreshGroupsBtn.disabled = !projectId;
       openCreateGroupBtn.disabled = !projectId;
@@ -334,7 +352,7 @@ async function loadGroups({ forceUi = false } = {}) {
   return state.inflight.groups;
 }
 
-async function loadDomains({ forceUi = false } = {}) {
+async function loadDomains({ forceUi = false, background = false } = {}) {
   if (state.inflight.domains) return state.inflight.domains;
   const keyErr = requireApiKeyForMeta();
   if (keyErr) {
@@ -346,7 +364,9 @@ async function loadDomains({ forceUi = false } = {}) {
   if (!forceUi && now - state.lastFetchTick.domains < 300) return;
   state.lastFetchTick.domains = now;
 
-  setDomainsLoading(true);
+  if (!background) {
+    setDomainsLoading(true);
+  }
   setInlineError("");
 
   state.inflight.domains = (async () => {
@@ -367,14 +387,23 @@ async function loadDomains({ forceUi = false } = {}) {
         getLabel: (item) => `${item.domain}${item.ssl_enabled ? " · HTTPS" : " · HTTP"}`,
       });
       if (currentValue) domainSelect.value = currentValue;
-      setMetaText(`自有域名已更新（${domains.length} 项，缓存：${data?._meta?.cache || "unknown"}）`);
+      setMetaText(
+        `自有域名已更新（${domains.length} 项，缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
+      );
     } catch (error) {
       setInlineError(`加载自有域名失败：${String(error.message || error)}`);
       setMetaText("自有域名列表加载失败");
-      state.domains = [];
-      populateSelect(domainSelect, [], { placeholder: "加载域名失败" });
+      if (!background) {
+        state.domains = [];
+        populateSelect(domainSelect, [], { placeholder: "加载域名失败" });
+      }
     } finally {
-      setDomainsLoading(false);
+      if (!background) {
+        setDomainsLoading(false);
+      } else {
+        domainSelect.disabled = false;
+        refreshDomainsBtn.disabled = false;
+      }
       state.inflight.domains = null;
     }
   })();
@@ -725,15 +754,18 @@ function setupSelectRefreshTriggers() {
   const refreshProjects = () => loadProjects({ forceUi: true });
   const refreshGroups = () => loadGroups({ forceUi: true });
   const refreshDomains = () => loadDomains({ forceUi: true });
+  const backgroundRefreshProjects = () => loadProjects({ forceUi: true, background: true });
+  const backgroundRefreshGroups = () => loadGroups({ forceUi: true, background: true });
+  const backgroundRefreshDomains = () => loadDomains({ forceUi: true, background: true });
 
   refreshProjectsBtn.addEventListener("click", refreshProjects);
   refreshGroupsBtn.addEventListener("click", refreshGroups);
   refreshDomainsBtn.addEventListener("click", refreshDomains);
 
   for (const [select, handler] of [
-    [projectSelect, refreshProjects],
-    [groupSelect, refreshGroups],
-    [domainSelect, refreshDomains],
+    [projectSelect, backgroundRefreshProjects],
+    [groupSelect, backgroundRefreshGroups],
+    [domainSelect, backgroundRefreshDomains],
   ]) {
     select.addEventListener("focus", handler);
     select.addEventListener("pointerdown", handler);
