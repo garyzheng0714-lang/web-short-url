@@ -42,6 +42,8 @@
             <p>对应文档：`/v2/sl/link/create`</p>
           </div>
 
+          <select name="project_id" id="projectSelect" hidden aria-hidden="true"></select>
+
           <div class="form-grid">
             <label class="field field-span-2" data-key-field>
               <span>API Key（apikey）</span>
@@ -55,23 +57,10 @@
             </label>
 
             <div class="field field-span-2 combo-field">
-              <span>项目（project_id）<em>*</em></span>
-              <div class="combo">
-                <select name="project_id" id="projectSelect" required>
-                  <option value="">请先加载项目</option>
-                </select>
-                <button type="button" class="btn btn-ghost btn-mini" id="refreshProjectsBtn">
-                  刷新项目
-                </button>
-              </div>
-              <small>点击选择框时会尝试拉取最新项目列表（服务端有短时缓存）。</small>
-            </div>
-
-            <div class="field field-span-2 combo-field">
               <span>分组（group_id）<em>*</em></span>
               <div class="combo">
                 <select name="group_id" id="groupSelect" required disabled>
-                  <option value="">请先选择项目</option>
+                  <option value="">正在加载默认项目分组...</option>
                 </select>
                 <button type="button" class="btn btn-ghost btn-mini" id="refreshGroupsBtn" disabled>
                   刷新分组
@@ -80,7 +69,7 @@
                   新建分组
                 </button>
               </div>
-              <small>分组列表按当前项目加载；可先在这里新建分组再创建短链。</small>
+              <small>分组列表默认使用项目“我的项目”（若不存在则自动回退到第一个项目）。</small>
             </div>
 
             <label class="field field-span-2">
@@ -117,7 +106,7 @@
                       刷新域名
                     </button>
                   </div>
-                  <small>点击选择框时会尝试拉取你账号下最新可用的自有域名列表。</small>
+                  <small>使用原生下拉；需要最新数据时点击右侧“刷新域名”。</small>
                 </div>
 
                 <label class="field">

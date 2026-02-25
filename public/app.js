@@ -7,7 +7,6 @@ const keyField = document.querySelector("[data-key-field]");
 const projectSelect = document.querySelector("#projectSelect");
 const groupSelect = document.querySelector("#groupSelect");
 const domainSelect = document.querySelector("#domainSelect");
-const refreshProjectsBtn = document.querySelector("#refreshProjectsBtn");
 const refreshGroupsBtn = document.querySelector("#refreshGroupsBtn");
 const refreshDomainsBtn = document.querySelector("#refreshDomainsBtn");
 const openCreateGroupBtn = document.querySelector("#openCreateGroupBtn");
@@ -35,6 +34,7 @@ const webhookCallbackUrlInput = document.querySelector("#webhookCallbackUrl");
 const LS_KEYS = {
   webhookCallbackUrl: "shorturl:webhook_callback_url",
 };
+const DEFAULT_PROJECT_NAME = "我的项目";
 
 const state = {
   config: null,
@@ -172,7 +172,6 @@ function populateSelect(select, options, {
 
 function setProjectsLoading(loading) {
   projectSelect.disabled = loading;
-  refreshProjectsBtn.disabled = loading;
   if (loading) {
     projectSelect.innerHTML = `<option value="">加载项目中...</option>`;
   }
@@ -214,6 +213,15 @@ function requireApiKeyForMeta() {
   return "";
 }
 
+function pickDefaultProject(projects) {
+  if (!Array.isArray(projects) || projects.length === 0) return null;
+  return (
+    projects.find((item) => normalizeText(item?.name) === DEFAULT_PROJECT_NAME) ||
+    projects[0] ||
+    null
+  );
+}
+
 async function loadProjects({ forceUi = false, background = false } = {}) {
   if (state.inflight.projects) return state.inflight.projects;
   const keyErr = requireApiKeyForMeta();
@@ -240,26 +248,30 @@ async function loadProjects({ forceUi = false, background = false } = {}) {
       const projects = Array.isArray(data?.data?.projects) ? data.data.projects : [];
       state.projects = projects;
       populateSelect(projectSelect, projects, {
-        placeholder: projects.length ? "请选择项目" : "暂无项目",
+        placeholder: projects.length ? "默认项目" : "暂无项目",
         getValue: (item) => item.id,
         getLabel: (item) => `${item.name} (${item.id})`,
       });
 
-      if (!projectSelect.value && projects.length === 1) {
-        projectSelect.value = projects[0].id;
+      const defaultProject = pickDefaultProject(projects);
+      if (defaultProject) {
+        projectSelect.value = defaultProject.id;
       }
 
-      setMetaText(
-        `项目列表已更新（${projects.length} 项，缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
-      );
       refreshGroupsBtn.disabled = !projectSelect.value;
       openCreateGroupBtn.disabled = !projectSelect.value;
       if (projectSelect.value) {
+        const selectedProject = getSelectedProject();
+        const selectedProjectName = selectedProject?.name || "未命名项目";
+        setMetaText(
+          `默认项目：${selectedProjectName}（缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
+        );
         await loadGroups({ background });
       } else {
         state.groups = [];
-        populateSelect(groupSelect, [], { placeholder: "请先选择项目" });
+        populateSelect(groupSelect, [], { placeholder: "未找到可用项目" });
         groupSelect.disabled = true;
+        setMetaText("未找到可用项目，请先在小码后台创建项目。");
       }
     } catch (error) {
       setInlineError(`加载项目失败：${String(error.message || error)}`);
@@ -291,7 +303,7 @@ async function loadGroups({ forceUi = false, background = false } = {}) {
   }
   const projectId = normalizeText(projectSelect.value);
   if (!projectId) {
-    populateSelect(groupSelect, [], { placeholder: "请先选择项目" });
+    populateSelect(groupSelect, [], { placeholder: "默认项目未加载" });
     groupSelect.disabled = true;
     refreshGroupsBtn.disabled = true;
     openCreateGroupBtn.disabled = true;
@@ -463,7 +475,7 @@ function validatePayload(payload) {
     return "请填写 apikey，或在服务端配置 XIAOMARK_API_KEY。";
   }
   if (!payload.project_id) {
-    return "请先选择项目。";
+    return "默认项目尚未加载成功，请稍后重试。";
   }
   if (!payload.group_id) {
     return "请先选择分组。";
@@ -608,7 +620,7 @@ function getSelectedProject() {
 function openGroupModal() {
   const project = getSelectedProject();
   if (!project) {
-    setInlineError("请先选择项目，再创建分组。");
+    setInlineError("默认项目尚未加载成功，暂时无法创建分组。");
     return;
   }
   groupModalProjectInfo.textContent = `${project.name} (${project.id})`;
@@ -640,7 +652,7 @@ async function handleCreateGroup(event) {
   const project = getSelectedProject();
   const name = normalizeText(newGroupNameInput.value);
   if (!project) {
-    setGroupModalError("未选择项目。");
+    setGroupModalError("默认项目尚未加载成功。");
     setGroupModalStatus("无法创建分组", "error");
     createGroupBtn.disabled = false;
     return;
@@ -731,7 +743,7 @@ async function loadConfig() {
     const ttl = Number(config?.cacheTtlMs || 0);
     setBadge(
       cacheBadge,
-      ttl > 0 ? `服务端缓存 ${Math.round(ttl / 1000)}s（点击下拉仍会触发刷新请求）` : "无缓存",
+      ttl > 0 ? `服务端缓存 ${Math.round(ttl / 1000)}s（使用刷新按钮获取最新）` : "无缓存",
       "ok"
     );
 
@@ -751,36 +763,16 @@ async function loadConfig() {
 }
 
 function setupSelectRefreshTriggers() {
-  const refreshProjects = () => loadProjects({ forceUi: true });
   const refreshGroups = () => loadGroups({ forceUi: true });
   const refreshDomains = () => loadDomains({ forceUi: true });
-  const backgroundRefreshProjects = () => loadProjects({ forceUi: true, background: true });
-  const backgroundRefreshGroups = () => loadGroups({ forceUi: true, background: true });
-  const backgroundRefreshDomains = () => loadDomains({ forceUi: true, background: true });
-
-  refreshProjectsBtn.addEventListener("click", refreshProjects);
   refreshGroupsBtn.addEventListener("click", refreshGroups);
   refreshDomainsBtn.addEventListener("click", refreshDomains);
-
-  for (const [select, handler] of [
-    [projectSelect, backgroundRefreshProjects],
-    [groupSelect, backgroundRefreshGroups],
-    [domainSelect, backgroundRefreshDomains],
-  ]) {
-    select.addEventListener("focus", handler);
-    select.addEventListener("pointerdown", handler);
-  }
 }
 
 function wireEvents() {
   form.addEventListener("submit", handleSubmit);
   form.addEventListener("reset", () => setTimeout(handleReset, 0));
   copyLinkBtn.addEventListener("click", copyLatestLink);
-
-  projectSelect.addEventListener("change", async () => {
-    setInlineError("");
-    await loadGroups({ forceUi: true });
-  });
 
   $("escape_from_wechat").addEventListener("change", syncMutualExclusionHints);
   $("advanced_bot_detection").addEventListener("change", syncMutualExclusionHints);
@@ -814,8 +806,9 @@ function wireEvents() {
     state.projects = [];
     state.groups = [];
     state.domains = [];
-    populateSelect(projectSelect, [], { placeholder: "点击加载项目" });
-    populateSelect(groupSelect, [], { placeholder: "请先选择项目" });
+    populateSelect(projectSelect, [], { placeholder: "默认项目" });
+    projectSelect.value = "";
+    populateSelect(groupSelect, [], { placeholder: "正在加载默认项目分组..." });
     populateSelect(domainSelect, [], { placeholder: "默认域名（不指定，使用小码默认）" });
     loadProjects({ forceUi: true });
     loadDomains({ forceUi: true });
@@ -828,8 +821,8 @@ setJsonOutput({});
 setLinkResult("");
 setStatus("初始化中...");
 setMetaText("");
-populateSelect(projectSelect, [], { placeholder: "点击加载项目" });
-populateSelect(groupSelect, [], { placeholder: "请先选择项目" });
+populateSelect(projectSelect, [], { placeholder: "默认项目" });
+populateSelect(groupSelect, [], { placeholder: "正在加载默认项目分组..." });
 populateSelect(domainSelect, [], { placeholder: "默认域名（不指定，使用小码默认）" });
 groupSelect.disabled = true;
 refreshGroupsBtn.disabled = true;
