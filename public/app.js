@@ -114,14 +114,22 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function setInlineError(message = "") {
+function setInlineError(message = "", suggestion = null) {
   if (!message) {
     formError.hidden = true;
-    formError.textContent = "";
+    formError.innerHTML = "";
     return;
   }
   formError.hidden = false;
-  formError.textContent = message;
+  if (suggestion) {
+    formError.innerHTML = `${escapeHtml(message)} <button type="button" class="btn-suggestion" data-url="${escapeHtml(suggestion)}">使用 ${escapeHtml(suggestion)}</button>`;
+    formError.querySelector(".btn-suggestion").addEventListener("click", (e) => {
+      document.getElementById("targetUrlInput").value = e.target.dataset.url;
+      setInlineError("");
+    });
+  } else {
+    formError.textContent = message;
+  }
 }
 
 function setGroupModalError(message = "") {
@@ -1181,6 +1189,17 @@ function validatePayload(payload) {
   try {
     url = new URL(payload.target_url);
   } catch {
+    // Check if it looks like a domain missing protocol
+    const raw = payload.target_url.trim();
+    if (raw.includes(".") && !raw.includes(" ") && !/^(\w+):\/\//.test(raw)) {
+      const suggested = "https://" + raw;
+      try {
+        new URL(suggested);
+        return { message: "链接缺少协议前缀，你是否想输入 " + suggested + " ？", suggestion: suggested };
+      } catch {
+        // fall through
+      }
+    }
     return "target_url 不是有效链接。";
   }
   if (!["http:", "https:"].includes(url.protocol)) {
@@ -1234,9 +1253,11 @@ async function handleSubmit(event) {
   const payloadForHistory = { ...payload };
   const validationError = validatePayload(payload);
   if (validationError) {
-    setInlineError(validationError);
+    const errMsg = typeof validationError === "object" ? validationError.message : validationError;
+    const errSuggestion = typeof validationError === "object" ? validationError.suggestion : null;
+    setInlineError(errMsg, errSuggestion);
     setStatus("表单校验未通过", "error");
-    if (validationError.includes("Webhook") || validationError.includes("后缀") || validationError.includes("过滤")) {
+    if (errMsg.includes("Webhook") || errMsg.includes("后缀") || errMsg.includes("过滤")) {
       moreOptions.open = true;
     }
     submitBtn.disabled = false;
@@ -1544,26 +1565,3 @@ initDashboardState();
 wireEvents();
 loadConfig();
 
-// ===== Auto-prepend https:// on blur (Dub.co pattern) =====
-(function () {
-  const input = document.querySelector("#targetUrlInput");
-  if (!input) return;
-
-  function normalize() {
-    const raw = input.value.trim();
-    if (!raw) return;
-    // Already has protocol → do nothing
-    if (/^(\w+):\/\//.test(raw)) return;
-    // Looks like a domain: has a dot, no spaces
-    if (raw.includes(".") && !raw.includes(" ")) {
-      try {
-        const url = new URL("https://" + raw);
-        input.value = url.toString().replace(/\/$/, "");
-      } catch {
-        // Not a valid URL even with https://, leave as-is
-      }
-    }
-  }
-
-  input.addEventListener("blur", normalize);
-})();
