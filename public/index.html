@@ -70,19 +70,19 @@
 
         <!-- Result -->
         <div class="result-area" id="resultArea">
-          <div class="result-link-row">
+          <div class="result-link-row" id="resultLinkRow" hidden>
             <div id="linkOutput" class="link-output empty">尚未创建</div>
             <div class="result-btns">
-              <button type="button" class="btn btn-secondary" id="copyLinkBtn" disabled>复制</button>
-              <button type="button" class="btn btn-secondary" id="showQrBtn" disabled>二维码</button>
-              <button type="button" class="btn btn-secondary" id="resolveRedirectBtn" disabled>解析重定向</button>
-              <a id="openLinkBtn" class="btn btn-black disabled-link" href="#" target="_blank" rel="noreferrer">打开</a>
+              <button type="button" class="btn btn-secondary" id="copyLinkBtn">复制</button>
+              <button type="button" class="btn btn-secondary" id="showQrBtn">二维码</button>
+              <button type="button" class="btn btn-secondary" id="resolveRedirectBtn">解析重定向</button>
+              <a id="openLinkBtn" class="btn btn-black" href="#" target="_blank" rel="noreferrer">打开</a>
             </div>
           </div>
-          <div id="statusOutput" class="status-output" aria-live="polite">等待提交</div>
+          <div id="statusOutput" class="status-output" aria-live="polite"></div>
           <div id="metaOutput" class="meta-output" aria-live="polite"></div>
-          <div id="resolveOutput" class="status-output" aria-live="polite">尚未解析</div>
-          <div id="resolveMetaOutput" class="meta-output" aria-live="polite"></div>
+          <div id="resolveOutput" class="status-output" aria-live="polite" hidden></div>
+          <div id="resolveMetaOutput" class="meta-output" aria-live="polite" hidden></div>
           <pre id="jsonOutput" class="code-box" hidden>{}</pre>
         </div>
       </div>

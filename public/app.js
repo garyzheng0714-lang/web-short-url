@@ -115,17 +115,23 @@ function escapeHtml(value) {
 }
 
 function setInlineError(message = "", suggestion = null) {
+  const input = document.getElementById("targetUrlInput");
   if (!message) {
     formError.hidden = true;
     formError.innerHTML = "";
+    input.classList.remove("has-error");
     return;
   }
+  input.classList.add("has-error");
   formError.hidden = false;
   if (suggestion) {
-    formError.innerHTML = `${escapeHtml(message)} <button type="button" class="btn-suggestion" data-url="${escapeHtml(suggestion)}">使用 ${escapeHtml(suggestion)}</button>`;
-    formError.querySelector(".btn-suggestion").addEventListener("click", (e) => {
-      document.getElementById("targetUrlInput").value = e.target.dataset.url;
+    formError.innerHTML =
+      `${escapeHtml(message)}<a href="#" class="error-suggestion" data-url="${escapeHtml(suggestion)}">${escapeHtml(suggestion)}</a>`;
+    formError.querySelector(".error-suggestion").addEventListener("click", (e) => {
+      e.preventDefault();
+      input.value = e.currentTarget.dataset.url;
       setInlineError("");
+      input.focus();
     });
   } else {
     formError.textContent = message;
@@ -161,24 +167,19 @@ function setJsonOutput(data) {
 }
 
 function setLinkResult(url) {
+  const resultLinkRow = document.querySelector("#resultLinkRow");
   state.latestLinkUrl = url || "";
   if (!state.latestLinkUrl) {
+    if (resultLinkRow) resultLinkRow.hidden = true;
     linkOutput.className = "link-output empty";
     linkOutput.textContent = "尚未创建";
-    copyLinkBtn.disabled = true;
-    if (showQrBtn) showQrBtn.disabled = true;
-    if (resolveRedirectBtn) resolveRedirectBtn.disabled = true;
-    openLinkBtn.classList.add("disabled-link");
     openLinkBtn.href = "#";
     return;
   }
 
+  if (resultLinkRow) resultLinkRow.hidden = false;
   linkOutput.className = "link-output";
   linkOutput.innerHTML = `<a href="${escapeHtml(state.latestLinkUrl)}" target="_blank" rel="noreferrer">${escapeHtml(state.latestLinkUrl)}</a>`;
-  copyLinkBtn.disabled = false;
-  if (showQrBtn) showQrBtn.disabled = false;
-  if (resolveRedirectBtn) resolveRedirectBtn.disabled = false;
-  openLinkBtn.classList.remove("disabled-link");
   openLinkBtn.href = buildRedirectProxyUrl(state.latestLinkUrl);
 }
 
@@ -219,11 +220,13 @@ function setResolveText(text, kind = "") {
   if (!resolveOutput) return;
   resolveOutput.textContent = text;
   resolveOutput.className = `status-output${kind ? ` ${kind}` : ""}`;
+  resolveOutput.hidden = !text;
 }
 
 function setResolveMetaText(text = "") {
   if (!resolveMetaOutput) return;
   resolveMetaOutput.textContent = text;
+  resolveMetaOutput.hidden = !text;
 }
 
 function safeLocalStorageGet(key) {
@@ -839,7 +842,7 @@ function initDashboardState() {
   state.filters.group = "";
   state.filters.status = historyStatusFilter?.value || "all";
   renderDashboardHistory();
-  setResolveText("尚未解析");
+  setResolveText("");
   setResolveMetaText("");
   renderQrModalState({ loading: false, text: "", dataUrl: "" });
 }
@@ -1195,7 +1198,7 @@ function validatePayload(payload) {
       const suggested = "https://" + raw;
       try {
         new URL(suggested);
-        return { message: "链接缺少协议前缀，你是否想输入 " + suggested + " ？", suggestion: suggested };
+        return { message: "请输入完整链接，例如 ", suggestion: suggested };
       } catch {
         // fall through
       }
@@ -1245,7 +1248,7 @@ async function handleSubmit(event) {
   setInlineError("");
   setStatus("请求发送中...", "pending");
   setMetaText("");
-  setResolveText("尚未解析");
+  setResolveText("");
   setResolveMetaText("");
   submitBtn.disabled = true;
 
@@ -1308,7 +1311,7 @@ function handleReset() {
   setInlineError("");
   setStatus("等待提交");
   setMetaText("");
-  setResolveText("尚未解析");
+  setResolveText("");
   setResolveMetaText("");
   setJsonOutput({});
   setLinkResult("");
@@ -1552,7 +1555,7 @@ setJsonOutput({});
 setLinkResult("");
 setStatus("初始化中...");
 setMetaText("");
-setResolveText("尚未解析");
+setResolveText("");
 setResolveMetaText("");
 populateSelect(projectSelect, [], { placeholder: "默认项目" });
 populateSelect(groupSelect, [], { placeholder: "正在加载默认项目分组..." });
