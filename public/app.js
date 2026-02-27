@@ -670,7 +670,17 @@ function openRedirectForUrl(url, historyId = "") {
 }
 
 async function copyText(value) {
-  await navigator.clipboard.writeText(value);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  ta.remove();
 }
 
 async function handleHistoryAction(event) {
@@ -715,9 +725,13 @@ async function handleHistoryAction(event) {
 
 function bindDashboardEvents() {
   if (historySearchInput) {
+    let searchTimer;
     historySearchInput.addEventListener("input", () => {
-      state.filters.search = historySearchInput.value;
-      renderHistoryTable();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        state.filters.search = historySearchInput.value;
+        renderHistoryTable();
+      }, 200);
     });
   }
   if (historyGroupFilter) {
@@ -1016,7 +1030,7 @@ async function loadGroups({ forceUi = false, background = false } = {}) {
         getLabel: (item) => `${item.name} (${item.id}) · ${item.total_links ?? 0} 条`,
       });
 
-      if (!groupSelect.value && groups.length === 1) {
+      if (!groupSelect.value && groups.length >= 1) {
         groupSelect.value = groups[0].id;
       }
       setMetaText(
@@ -1412,6 +1426,7 @@ function applyDefaultsFromConfig(config) {
 
   const localWebhookUrl = loadStoredWebhookCallbackUrl();
   webhookCallbackUrlInput.value = localWebhookUrl || defaults.webhookCallbackUrl || "";
+  $("webhook_callback_url").value = defaults.webhookCallbackUrl || "";
 }
 
 async function loadConfig() {
@@ -1495,15 +1510,6 @@ function wireEvents() {
     closeGroupModal();
   });
 
-  webhookCallbackUrlInput.addEventListener("change", () => {
-    const value = normalizeText(webhookCallbackUrlInput.value);
-    try {
-      if (value) localStorage.setItem(LS_KEYS.webhookCallbackUrl, value);
-    } catch {
-      // Ignore localStorage failures
-    }
-  });
-
   $("apikey").addEventListener("change", () => {
     if (state.serverHasApiKey) return;
     state.projects = [];
@@ -1537,3 +1543,27 @@ openCreateGroupBtn.disabled = true;
 initDashboardState();
 wireEvents();
 loadConfig();
+
+// ===== Auto-prepend https:// on blur (Dub.co pattern) =====
+(function () {
+  const input = document.querySelector("#targetUrlInput");
+  if (!input) return;
+
+  function normalize() {
+    const raw = input.value.trim();
+    if (!raw) return;
+    // Already has protocol → do nothing
+    if (/^(\w+):\/\//.test(raw)) return;
+    // Looks like a domain: has a dot, no spaces
+    if (raw.includes(".") && !raw.includes(" ")) {
+      try {
+        const url = new URL("https://" + raw);
+        input.value = url.toString().replace(/\/$/, "");
+      } catch {
+        // Not a valid URL even with https://, leave as-is
+      }
+    }
+  }
+
+  input.addEventListener("blur", normalize);
+})();
