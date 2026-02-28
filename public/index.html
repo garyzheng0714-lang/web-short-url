@@ -8,24 +8,45 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260228c" />
   </head>
   <body>
+    <!-- Login Gate -->
+    <div id="loginGate" class="login-gate">
+      <div class="login-card">
+        <svg class="login-logo" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <h1 class="login-title">FBIF 短链工具</h1>
+        <p class="login-desc">快速创建短链、生成二维码、管理跳转记录</p>
+        <a href="/api/auth/feishu/login" class="btn btn-feishu" id="feishuLoginBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 4.5L10.5 12L3 19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 4.5L18 12L10.5 19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          飞书登录
+        </a>
+      </div>
+    </div>
+
     <!-- Topbar -->
-    <nav class="topbar">
+    <nav class="topbar" id="topbar" hidden>
       <div class="topbar-inner">
         <a class="brand" href="#createForm">
           <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           <span class="brand-text">FBIF 短链</span>
         </a>
-        <div class="topbar-badges">
-          <span id="configBadge" class="badge">检查中...</span>
-          <span id="cacheBadge" class="badge">加载中...</span>
+        <div class="topbar-right">
+          <div class="topbar-user" id="topbarUser" hidden>
+            <img class="topbar-avatar" id="topbarAvatar" src="" alt="" />
+            <span class="topbar-name" id="topbarName"></span>
+            <button type="button" class="btn btn-ghost btn-sm" id="logoutBtn">退出</button>
+          </div>
+          <button type="button" class="topbar-settings-btn" id="openSettingsBtn" aria-label="设置">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          </button>
         </div>
       </div>
     </nav>
+    <!-- Hidden badges for JS compatibility -->
+    <div hidden><span id="configBadge"></span><span id="cacheBadge"></span></div>
 
-    <main class="shell">
+    <main class="shell" id="mainShell" hidden>
       <!-- Hidden: stats IDs for app.js -->
       <div hidden>
         <div id="statTotalLinks">0</div>
@@ -34,13 +55,7 @@
         <div id="statResolvedCount">0</div>
       </div>
 
-      <!-- Hero -->
-      <div class="hero">
-        <h1 class="hero-title">缩短你的链接</h1>
-        <p class="hero-sub">粘贴长链接，一键生成短链，支持二维码和重定向调试。</p>
-      </div>
-
-      <!-- Create form card -->
+      <!-- Create form — the focal point -->
       <div class="create-card">
         <form id="createForm" novalidate>
           <select name="project_id" id="projectSelect" hidden aria-hidden="true"></select>
@@ -50,7 +65,6 @@
           <select id="domainSelect" hidden aria-hidden="true"><option value="t.fbif.com" selected>t.fbif.com</option></select>
           <input type="hidden" id="webhookCallbackUrl" />
 
-          <label class="input-label" for="targetUrlInput">目标链接</label>
           <div class="input-row">
             <input
               class="input-main"
@@ -58,11 +72,11 @@
               name="target_url"
               id="targetUrlInput"
               required
-              placeholder="粘贴长链接，例如 fbif.com/hello"
+              placeholder="粘贴长链接，按回车生成短链"
               inputmode="url"
               autocomplete="off"
             />
-            <button type="submit" class="btn btn-black" id="submitBtn">创建短链</button>
+            <button type="submit" class="btn btn-primary" id="submitBtn">缩短</button>
           </div>
 
           <div id="formError" class="form-error" hidden></div>
@@ -71,12 +85,14 @@
         <!-- Result -->
         <div class="result-area" id="resultArea">
           <div class="result-link-row" id="resultLinkRow" hidden>
-            <div id="linkOutput" class="link-output empty">尚未创建</div>
+            <div class="link-output-row">
+              <div id="linkOutput" class="link-output empty">尚未创建</div>
+              <button type="button" class="link-action" id="copyLinkBtn">复制</button>
+              <a id="openLinkBtn" class="link-action" href="#" target="_blank" rel="noreferrer">打开</a>
+            </div>
             <div class="result-btns">
-              <button type="button" class="btn btn-secondary" id="copyLinkBtn">复制</button>
               <button type="button" class="btn btn-secondary" id="showQrBtn">二维码</button>
-              <button type="button" class="btn btn-secondary" id="resolveRedirectBtn">解析重定向</button>
-              <a id="openLinkBtn" class="btn btn-black" href="#" target="_blank" rel="noreferrer">打开</a>
+              <button type="button" class="btn btn-secondary" id="resolveRedirectBtn">查看跳转</button>
             </div>
           </div>
           <div id="statusOutput" class="status-output" aria-live="polite"></div>
@@ -87,14 +103,111 @@
         </div>
       </div>
 
-      <!-- Advanced options -->
-      <details class="details-card" id="moreOptions">
-        <summary class="details-summary">
-          <span>高级选项</span>
-          <span class="summary-note">API Key、分组、自定义后缀等</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </summary>
-        <div class="details-body">
+      <!-- Hidden: moreOptions reference for JS -->
+      <div id="moreOptions" hidden></div>
+
+      <!-- History -->
+      <section class="history-section">
+        <div class="history-header">
+          <h2 class="history-title">历史记录 <span id="historyCount" class="title-count">(0)</span></h2>
+          <div class="list-head-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="exportHistoryBtn">导出</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="clearHistoryBtn">清空</button>
+          </div>
+        </div>
+
+        <div class="list-toolbar">
+          <input class="input" type="search" id="historySearchInput" placeholder="搜索..." />
+          <select id="historyGroupFilter" aria-label="按分组筛选">
+            <option value="">全部分组</option>
+          </select>
+          <select id="historyStatusFilter" aria-label="按状态筛选">
+            <option value="all">全部状态</option>
+            <option value="active">可用</option>
+            <option value="resolved">已查看</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table class="history-table">
+            <thead>
+              <tr><th class="col-short">短链</th><th class="col-target">目标链接</th><th class="col-group">分组</th><th class="col-clicks">创建时间</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr>
+            </thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+          <div id="historyEmptyHint" class="table-empty" hidden>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3;margin-bottom:8px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <div>还没有短链记录</div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">FBIF ShortLink &copy; 2026</footer>
+    </main>
+
+    <!-- Group Modal -->
+    <dialog id="groupModal" class="modal">
+      <form method="dialog" class="modal-card" id="groupModalForm" novalidate>
+        <div class="modal-head">
+          <h3>新建分组</h3>
+          <button type="button" class="btn-close" id="closeGroupModalBtn" aria-label="关闭">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field-group">
+            <label class="field-label">当前项目</label>
+            <div id="groupModalProjectInfo" class="readonly-box">未选择项目</div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">分组名称 <span class="required">*</span></label>
+            <input class="input" type="text" id="newGroupName" maxlength="64" placeholder="例如：FoodTalks 活动页" required />
+            <p class="field-hint">长度不超过 64 字符。</p>
+          </div>
+          <div id="groupModalError" class="form-error" hidden></div>
+          <div id="groupModalStatus" class="status-output" aria-live="polite">填写名称后提交</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-secondary" id="cancelGroupModalBtn">取消</button>
+          <button type="submit" class="btn btn-black" id="createGroupBtn">创建</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- QR Modal -->
+    <dialog id="qrModal" class="modal">
+      <div class="modal-card qr-modal-card">
+        <div class="modal-head">
+          <h3 id="qrModalTitle">短链二维码</h3>
+          <button type="button" class="btn-close" id="closeQrModalBtn" aria-label="关闭">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="qrModalError" class="form-error" hidden></div>
+          <div class="qr-preview">
+            <img id="qrModalImage" alt="短链二维码" hidden />
+            <div id="qrModalPlaceholder" class="qr-placeholder">正在生成...</div>
+          </div>
+          <div class="qr-meta">
+            <div class="meta-label">短链地址</div>
+            <div class="link-output-row qr-link-row">
+              <div id="qrModalText" class="link-output empty">尚未生成</div>
+              <button type="button" class="link-action" id="copyQrLinkBtn" hidden>复制</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-secondary" id="copyQrImageBtn" disabled>复制二维码</button>
+          <button type="button" class="btn btn-primary" id="downloadQrBtn" disabled>保存二维码</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Settings Modal -->
+    <dialog id="settingsModal" class="modal">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3>高级设置</h3>
+          <button type="button" class="btn-close" id="closeSettingsBtn" aria-label="关闭">&times;</button>
+        </div>
+        <div class="modal-body">
           <form id="advancedFormProxy">
             <div class="field-group">
               <label class="field-label" data-key-field>API Key</label>
@@ -146,100 +259,8 @@
             </div>
           </form>
         </div>
-      </details>
-
-      <!-- History -->
-      <details class="details-card">
-        <summary class="details-summary">
-          <span>历史记录</span>
-          <span id="historyCount" class="title-count">(0)</span>
-          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </summary>
-        <div class="details-body" id="historyTitle">
-          <div class="list-head">
-            <div class="list-head-actions">
-              <button type="button" class="btn btn-secondary btn-sm" id="clearHistoryBtn">清空</button>
-              <button type="button" class="btn btn-secondary btn-sm" id="exportHistoryBtn">导出</button>
-            </div>
-          </div>
-
-          <div class="list-toolbar">
-            <input class="input" type="search" id="historySearchInput" placeholder="搜索短链、目标链接..." />
-            <select id="historyGroupFilter" aria-label="按分组筛选">
-              <option value="">全部分组</option>
-            </select>
-            <select id="historyStatusFilter" aria-label="按状态筛选">
-              <option value="all">全部状态</option>
-              <option value="active">可用</option>
-              <option value="resolved">已解析</option>
-            </select>
-          </div>
-
-          <div class="table-wrap">
-            <table class="history-table">
-              <thead>
-                <tr><th class="col-short">短链</th><th class="col-target">目标链接</th><th class="col-group">分组</th><th class="col-clicks">重定向</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr>
-              </thead>
-              <tbody id="historyTableBody"></tbody>
-            </table>
-            <div id="historyEmptyHint" class="table-empty" hidden>暂无记录，先创建一条短链。</div>
-          </div>
-        </div>
-      </details>
-
-      <footer class="footer">FBIF ShortLink Tool &copy; 2026</footer>
-    </main>
-
-    <!-- Group Modal -->
-    <dialog id="groupModal" class="modal">
-      <form method="dialog" class="modal-card" id="groupModalForm" novalidate>
-        <div class="modal-head">
-          <h3>新建分组</h3>
-          <button type="button" class="btn-close" id="closeGroupModalBtn" aria-label="关闭">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="field-group">
-            <label class="field-label">当前项目</label>
-            <div id="groupModalProjectInfo" class="readonly-box">未选择项目</div>
-          </div>
-          <div class="field-group">
-            <label class="field-label">分组名称 <span class="required">*</span></label>
-            <input class="input" type="text" id="newGroupName" maxlength="64" placeholder="例如：FoodTalks 活动页" required />
-            <p class="field-hint">长度不超过 64 字符。</p>
-          </div>
-          <div id="groupModalError" class="form-error" hidden></div>
-          <div id="groupModalStatus" class="status-output" aria-live="polite">填写名称后提交</div>
-        </div>
         <div class="modal-foot">
-          <button type="button" class="btn btn-secondary" id="cancelGroupModalBtn">取消</button>
-          <button type="submit" class="btn btn-black" id="createGroupBtn">创建</button>
-        </div>
-      </form>
-    </dialog>
-
-    <!-- QR Modal -->
-    <dialog id="qrModal" class="modal">
-      <div class="modal-card qr-modal-card">
-        <div class="modal-head">
-          <h3 id="qrModalTitle">短链二维码</h3>
-          <button type="button" class="btn-close" id="closeQrModalBtn" aria-label="关闭">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div id="qrModalError" class="form-error" hidden></div>
-          <div class="qr-preview">
-            <img id="qrModalImage" alt="短链二维码" hidden />
-            <div id="qrModalPlaceholder" class="qr-placeholder">正在生成...</div>
-          </div>
-          <div class="qr-meta">
-            <div class="meta-label">短链地址</div>
-            <div id="qrModalText" class="link-output empty">尚未生成</div>
-          </div>
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="btn btn-secondary" id="copyQrSourceBtn" disabled>复制短链</button>
-          <button type="button" class="btn btn-secondary" id="downloadQrBtn" disabled>下载</button>
-          <button type="button" class="btn btn-black" id="openQrSourceBtn" disabled>打开</button>
-          <button type="button" class="btn btn-secondary" id="cancelQrModalBtn">关闭</button>
+          <button type="button" class="btn btn-black" id="closeSettingsDoneBtn">完成</button>
         </div>
       </div>
     </dialog>
@@ -248,6 +269,6 @@
     <script>
     (function(){var C="csel";function wrap(n){if(n.dataset.csel)return;n.dataset.csel="1";n.classList.add("csel-native");var b=document.createElement("div");b.className=C;var t=document.createElement("button");t.type="button";t.className="csel-trigger";var l=document.createElement("span");l.className="csel-label";var a=document.createElement("span");a.className="csel-arrow";a.innerHTML="&#x25BE;";t.appendChild(l);t.appendChild(a);var d=document.createElement("div");d.className="csel-list";b.appendChild(t);b.appendChild(d);n.parentNode.insertBefore(b,n);b.appendChild(n);var desc=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value");if(desc&&desc.set){Object.defineProperty(n,"value",{get:function(){return desc.get.call(this)},set:function(v){desc.set.call(this,v);sync()},configurable:true})}function sync(){d.innerHTML="";for(var i=0;i<n.options.length;i++){var o=n.options[i];var div=document.createElement("div");div.className="csel-option"+(o.value===n.value?" selected":"")+(!o.value?" placeholder":"");div.dataset.value=o.value;div.textContent=o.textContent;d.appendChild(div)}var s=n.options[n.selectedIndex];l.textContent=s?s.textContent:"";l.classList.toggle("placeholder",!n.value);t.disabled=n.disabled}t.addEventListener("click",function(){if(t.disabled)return;var w=b.classList.contains("open");closeAll();if(!w){b.classList.add("open");var ac=d.querySelector(".selected");if(ac)ac.scrollIntoView({block:"nearest"})}});d.addEventListener("click",function(e){var it=e.target.closest(".csel-option");if(!it)return;desc.set.call(n,it.dataset.value);n.dispatchEvent(new Event("change",{bubbles:true}));b.classList.remove("open");sync()});new MutationObserver(function(){requestAnimationFrame(sync)}).observe(n,{childList:true,subtree:true,attributes:true});n.addEventListener("change",sync);sync()}function closeAll(){document.querySelectorAll("."+C+".open").forEach(function(el){el.classList.remove("open")})}document.addEventListener("click",function(e){if(!e.target.closest("."+C))closeAll()});document.addEventListener("keydown",function(e){if(e.key==="Escape")closeAll()});function init(){document.querySelectorAll("select:not([hidden])").forEach(wrap)}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init)}else{init()}})();
     </script>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?v=20260228c"></script>
   </body>
 </html>

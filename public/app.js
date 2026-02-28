@@ -1,3 +1,13 @@
+// ===== Auth Elements =====
+const loginGate = document.querySelector("#loginGate");
+const topbar = document.querySelector("#topbar");
+const mainShell = document.querySelector("#mainShell");
+const topbarUser = document.querySelector("#topbarUser");
+const topbarAvatar = document.querySelector("#topbarAvatar");
+const topbarName = document.querySelector("#topbarName");
+const logoutBtn = document.querySelector("#logoutBtn");
+
+// ===== App Elements =====
 const form = document.querySelector("#createForm");
 const submitBtn = document.querySelector("#submitBtn");
 const formError = document.querySelector("#formError");
@@ -55,18 +65,17 @@ const qrModalText = document.querySelector("#qrModalText");
 const qrModalError = document.querySelector("#qrModalError");
 const closeQrModalBtn = document.querySelector("#closeQrModalBtn");
 const cancelQrModalBtn = document.querySelector("#cancelQrModalBtn");
-const copyQrSourceBtn = document.querySelector("#copyQrSourceBtn");
 const downloadQrBtn = document.querySelector("#downloadQrBtn");
-const openQrSourceBtn = document.querySelector("#openQrSourceBtn");
 
 const webhookCallbackUrlInput = document.querySelector("#webhookCallbackUrl");
 
 const LS_KEYS = {
   webhookCallbackUrl: "shorturl:webhook_callback_url",
   history: "shorturl:history:v1",
+  migrated: "shorturl:history_migrated",
 };
 const DEFAULT_PROJECT_NAME = "我的项目";
-const MAX_HISTORY_ITEMS = 200;
+const MAX_HISTORY_ITEMS = 500;
 
 const state = {
   config: null,
@@ -86,6 +95,7 @@ const state = {
     domains: 0,
   },
   historyItems: [],
+  currentUser: null,
   qrModal: {
     sourceUrl: "",
     dataUrl: "",
@@ -126,15 +136,15 @@ function setInlineError(message = "", suggestion = null) {
   formError.hidden = false;
   if (suggestion) {
     formError.innerHTML =
-      `${escapeHtml(message)}<a href="#" class="error-suggestion" data-url="${escapeHtml(suggestion)}">${escapeHtml(suggestion)}</a>`;
-    formError.querySelector(".error-suggestion").addEventListener("click", (e) => {
+      `<span class="error-text">${escapeHtml(message)}</span><button type="button" class="error-suggestion-btn" data-url="${escapeHtml(suggestion)}">使用 ${escapeHtml(suggestion)}</button>`;
+    formError.querySelector(".error-suggestion-btn").addEventListener("click", (e) => {
       e.preventDefault();
       input.value = e.currentTarget.dataset.url;
       setInlineError("");
       input.focus();
     });
   } else {
-    formError.textContent = message;
+    formError.innerHTML = `<span class="error-text">${escapeHtml(message)}</span>`;
   }
 }
 
@@ -151,10 +161,12 @@ function setGroupModalError(message = "") {
 function setStatus(text, kind = "") {
   statusOutput.textContent = text;
   statusOutput.className = `status-output${kind ? ` ${kind}` : ""}`;
+  statusOutput.hidden = !text;
 }
 
 function setMetaText(text = "") {
   metaOutput.textContent = text;
+  metaOutput.hidden = !text;
 }
 
 function setGroupModalStatus(text, kind = "") {
@@ -246,10 +258,6 @@ function safeLocalStorageSet(key, value) {
   }
 }
 
-function makeHistoryId() {
-  return `h_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function extractGroupNameFromLabel(label) {
   const text = normalizeText(label);
   if (!text) return "";
@@ -257,68 +265,92 @@ function extractGroupNameFromLabel(label) {
   return idx > 0 ? text.slice(0, idx) : text;
 }
 
-function normalizeHistoryItem(raw) {
-  const item = raw && typeof raw === "object" ? raw : {};
-  const linkUrl = normalizeText(item.linkUrl || item.link_url);
-  const targetUrl = normalizeText(item.targetUrl || item.target_url);
+// ===== Server History =====
+function normalizeServerHistoryItem(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const linkUrl = normalizeText(raw.link_url);
+  const targetUrl = normalizeText(raw.target_url);
   if (!linkUrl || !targetUrl) return null;
-
   return {
-    id: normalizeText(item.id) || makeHistoryId(),
+    id: raw.id,
     linkUrl,
     targetUrl,
-    name: normalizeText(item.name),
-    domain: normalizeText(item.domain),
-    groupId: normalizeText(item.groupId || item.group_id),
-    groupName: normalizeText(item.groupName || item.group_name),
-    status: normalizeText(item.status) || "active",
-    createdAt: normalizeText(item.createdAt || item.created_at) || new Date().toISOString(),
-    updatedAt: normalizeText(item.updatedAt || item.updated_at) || new Date().toISOString(),
-    redirectTestCount: Number(item.redirectTestCount || item.redirect_test_count || 0) || 0,
-    qrGeneratedCount: Number(item.qrGeneratedCount || item.qr_generated_count || 0) || 0,
-    redirectResolvedCount: Number(item.redirectResolvedCount || item.redirect_resolved_count || 0) || 0,
-    lastResolvedFinalUrl: normalizeText(item.lastResolvedFinalUrl || item.last_resolved_final_url),
-    lastResolvedAt: normalizeText(item.lastResolvedAt || item.last_resolved_at),
-    resolved: Boolean(item.resolved || item.lastResolvedFinalUrl || item.last_resolved_final_url),
+    name: normalizeText(raw.name),
+    domain: normalizeText(raw.domain),
+    groupId: normalizeText(raw.group_id),
+    groupName: normalizeText(raw.group_name),
+    createdAt: normalizeText(raw.created_at),
   };
 }
 
-function loadHistoryItems() {
-  const raw = safeLocalStorageGet(LS_KEYS.history);
-  if (!raw) return [];
+async function loadServerHistory() {
   try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeHistoryItem).filter(Boolean).slice(0, MAX_HISTORY_ITEMS);
+    const res = await fetch("/api/history");
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.items)) return;
+    state.historyItems = data.items.map(normalizeServerHistoryItem).filter(Boolean);
+    renderDashboardHistory();
   } catch {
-    return [];
+    // Silently fail
   }
 }
 
-function persistHistoryItems() {
-  safeLocalStorageSet(LS_KEYS.history, JSON.stringify(state.historyItems.slice(0, MAX_HISTORY_ITEMS)));
+async function deleteServerHistoryItem(id) {
+  try {
+    await fetch(`/api/history/${id}`, { method: "DELETE" });
+  } catch {
+    // ignore
+  }
 }
 
-function setHistoryItems(items) {
-  state.historyItems = (Array.isArray(items) ? items : [])
-    .map(normalizeHistoryItem)
-    .filter(Boolean)
-    .slice(0, MAX_HISTORY_ITEMS);
-  persistHistoryItems();
-  renderDashboardHistory();
+async function clearServerHistory() {
+  try {
+    await fetch("/api/history", { method: "DELETE" });
+  } catch {
+    // ignore
+  }
+}
+
+async function migrateLocalStorageHistory() {
+  const migrated = safeLocalStorageGet(LS_KEYS.migrated);
+  if (migrated) return;
+
+  const raw = safeLocalStorageGet(LS_KEYS.history);
+  if (!raw) {
+    safeLocalStorageSet(LS_KEYS.migrated, "1");
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      safeLocalStorageSet(LS_KEYS.migrated, "1");
+      return;
+    }
+
+    const res = await fetch("/api/history/migrate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: parsed }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      safeLocalStorageSet(LS_KEYS.migrated, "1");
+      console.log(`Migrated ${data.migrated} history items to server.`);
+      await loadServerHistory();
+    }
+  } catch (err) {
+    console.error("History migration failed:", err);
+  }
 }
 
 function getHistoryStats() {
-  return state.historyItems.reduce(
-    (acc, item) => {
-      acc.total += 1;
-      acc.redirectTests += Number(item.redirectTestCount || 0);
-      acc.qrCount += Number(item.qrGeneratedCount || 0);
-      acc.resolvedCount += Number(item.redirectResolvedCount || 0);
-      return acc;
-    },
-    { total: 0, redirectTests: 0, qrCount: 0, resolvedCount: 0 }
-  );
+  return {
+    total: state.historyItems.length,
+    redirectTests: 0,
+    qrCount: 0,
+    resolvedCount: 0,
+  };
 }
 
 function renderDashboardStats() {
@@ -337,8 +369,6 @@ function getFilteredHistoryItems() {
 
   return state.historyItems.filter((item) => {
     if (group && item.groupId !== group) return false;
-    if (status === "resolved" && !item.resolved) return false;
-    if (status === "active" && item.status !== "active") return false;
     if (!search) return true;
     const haystack = [
       item.linkUrl,
@@ -346,7 +376,6 @@ function getFilteredHistoryItems() {
       item.name,
       item.groupName,
       item.groupId,
-      item.lastResolvedFinalUrl,
     ]
       .filter(Boolean)
       .join("\n")
@@ -391,43 +420,27 @@ function renderHistoryTable() {
 
   const rowsHtml = items
     .map((item) => {
-      const shortLabel = item.name || item.linkUrl;
-      const targetSub = item.lastResolvedFinalUrl
-        ? `已解析 → ${escapeHtml(item.lastResolvedFinalUrl)}`
-        : escapeHtml(item.targetUrl);
-      const statusPill = item.resolved
-        ? `<span class="table-pill info">已解析</span>`
-        : `<span class="table-pill success">可用</span>`;
       const createdAtText = formatDateTime(item.createdAt);
       return `
         <tr class="history-row" data-id="${escapeHtml(item.id)}">
           <td class="col-short">
-            <a class="table-link" href="${escapeHtml(buildRedirectProxyUrl(item.linkUrl))}" target="_blank" rel="noreferrer">${escapeHtml(shortLabel)}</a>
-            <div class="table-subtext">${escapeHtml(item.linkUrl)}</div>
+            <a class="table-link" href="${escapeHtml(buildRedirectProxyUrl(item.linkUrl))}" target="_blank" rel="noreferrer">${escapeHtml(item.linkUrl)}</a>
           </td>
           <td class="col-target">
-            <div class="table-subtext" title="${escapeHtml(item.targetUrl)}">${escapeHtml(item.targetUrl)}</div>
-            ${
-              item.lastResolvedFinalUrl
-                ? `<div class="table-subtext" title="${escapeHtml(item.lastResolvedFinalUrl)}">${targetSub}</div>`
-                : ""
-            }
+            <div class="table-subtext" title="${escapeHtml(item.targetUrl)}">→ ${escapeHtml(item.targetUrl)}</div>
           </td>
           <td class="col-group">
             <div>${escapeHtml(item.groupName || "未记录")}</div>
             <div class="table-subtext">${escapeHtml(item.groupId || "-")}</div>
           </td>
           <td class="col-clicks">
-            <div>${Number(item.redirectTestCount || 0)}</div>
             <div class="table-subtext">${createdAtText || "-"}</div>
           </td>
-          <td class="col-status">${statusPill}</td>
+          <td class="col-status"><span class="table-pill success">可用</span></td>
           <td class="col-actions">
             <div class="table-actions">
               <button type="button" class="action-btn" data-action="copy" data-id="${escapeHtml(item.id)}">复制</button>
               <button type="button" class="action-btn" data-action="qr" data-id="${escapeHtml(item.id)}">二维码</button>
-              <button type="button" class="action-btn" data-action="redirect" data-id="${escapeHtml(item.id)}">重定向</button>
-              <button type="button" class="action-btn" data-action="resolve" data-id="${escapeHtml(item.id)}">解析</button>
               <button type="button" class="action-btn danger" data-action="delete" data-id="${escapeHtml(item.id)}">删除</button>
             </div>
           </td>
@@ -446,67 +459,7 @@ function renderDashboardHistory() {
 }
 
 function findHistoryItemById(id) {
-  return state.historyItems.find((item) => item.id === id) || null;
-}
-
-function updateHistoryItem(id, updater) {
-  const index = state.historyItems.findIndex((item) => item.id === id);
-  if (index < 0) return null;
-  const next = updater({ ...state.historyItems[index] });
-  if (!next) return null;
-  state.historyItems[index] = normalizeHistoryItem({
-    ...next,
-    updatedAt: new Date().toISOString(),
-  });
-  persistHistoryItems();
-  renderDashboardHistory();
-  return state.historyItems[index];
-}
-
-function removeHistoryItem(id) {
-  state.historyItems = state.historyItems.filter((item) => item.id !== id);
-  persistHistoryItems();
-  renderDashboardHistory();
-}
-
-function upsertHistoryItemFromCreate({ linkUrl, payload, responseData }) {
-  const normalizedLink = normalizeText(linkUrl);
-  const normalizedTarget = normalizeText(payload?.target_url);
-  if (!normalizedLink || !normalizedTarget) return;
-
-  const groupLabel = groupSelect?.selectedOptions?.[0]?.textContent || "";
-  const groupName = extractGroupNameFromLabel(groupLabel);
-  const existingIndex = state.historyItems.findIndex((item) => item.linkUrl === normalizedLink);
-  const nowIso = new Date().toISOString();
-  const base = {
-    id: existingIndex >= 0 ? state.historyItems[existingIndex].id : makeHistoryId(),
-    linkUrl: normalizedLink,
-    targetUrl: normalizedTarget,
-    name: normalizeText(payload?.name),
-    domain: normalizeText(payload?.domain),
-    groupId: normalizeText(payload?.group_id),
-    groupName,
-    status: "active",
-    createdAt: existingIndex >= 0 ? state.historyItems[existingIndex].createdAt : nowIso,
-    updatedAt: nowIso,
-    redirectTestCount: existingIndex >= 0 ? state.historyItems[existingIndex].redirectTestCount : 0,
-    qrGeneratedCount: existingIndex >= 0 ? state.historyItems[existingIndex].qrGeneratedCount : 0,
-    redirectResolvedCount: existingIndex >= 0 ? state.historyItems[existingIndex].redirectResolvedCount : 0,
-    lastResolvedFinalUrl: existingIndex >= 0 ? state.historyItems[existingIndex].lastResolvedFinalUrl : "",
-    lastResolvedAt: existingIndex >= 0 ? state.historyItems[existingIndex].lastResolvedAt : "",
-    resolved: existingIndex >= 0 ? state.historyItems[existingIndex].resolved : false,
-  };
-
-  // Keep the newest records at the top.
-  const normalized = normalizeHistoryItem(base);
-  if (!normalized) return;
-  if (existingIndex >= 0) {
-    state.historyItems.splice(existingIndex, 1);
-  }
-  state.historyItems.unshift(normalized);
-  state.historyItems = state.historyItems.slice(0, MAX_HISTORY_ITEMS);
-  persistHistoryItems();
-  renderDashboardHistory();
+  return state.historyItems.find((item) => String(item.id) === String(id)) || null;
 }
 
 function exportHistoryAsJson() {
@@ -557,12 +510,11 @@ function renderQrModalState({ loading = false, error = "", dataUrl = "", text = 
   }
 
   const disabled = loading || !hasData;
-  if (copyQrSourceBtn) copyQrSourceBtn.disabled = disabled;
+  const copyQrImageBtn = document.querySelector("#copyQrImageBtn");
+  if (copyQrImageBtn) copyQrImageBtn.disabled = disabled;
   if (downloadQrBtn) downloadQrBtn.disabled = disabled;
-  if (openQrSourceBtn) {
-    openQrSourceBtn.disabled = disabled;
-    openQrSourceBtn.classList.toggle("disabled-link", disabled);
-  }
+  const copyQrLinkBtn = document.querySelector("#copyQrLinkBtn");
+  if (copyQrLinkBtn) copyQrLinkBtn.hidden = !text && !hasData;
 }
 
 function openDialog(dialogEl) {
@@ -583,12 +535,22 @@ function closeDialog(dialogEl) {
   }
 }
 
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
+
 async function generateQrForUrl(url, historyId = "") {
   const sourceUrl = normalizeText(url);
   if (!sourceUrl) return;
 
   if (qrModalTitle) {
-    qrModalTitle.textContent = historyId ? "短链二维码（列表项）" : "短链二维码";
+    qrModalTitle.textContent = "短链二维码";
   }
 
   state.qrModal = { sourceUrl, dataUrl: "" };
@@ -602,18 +564,6 @@ async function generateQrForUrl(url, historyId = "") {
     }
     const dataUrl = normalizeText(data?.data?.data_url);
     renderQrModalState({ loading: false, text: sourceUrl, dataUrl });
-    if (openQrSourceBtn) {
-      openQrSourceBtn.disabled = false;
-      openQrSourceBtn.classList.remove("disabled-link");
-      openQrSourceBtn.dataset.url = sourceUrl;
-    }
-
-    if (historyId) {
-      updateHistoryItem(historyId, (item) => ({
-        ...item,
-        qrGeneratedCount: Number(item.qrGeneratedCount || 0) + 1,
-      }));
-    }
   } catch (error) {
     renderQrModalState({
       loading: false,
@@ -627,56 +577,31 @@ async function generateQrForUrl(url, historyId = "") {
 async function resolveRedirectForUrl(url, historyId = "") {
   const sourceUrl = normalizeText(url);
   if (!sourceUrl) return;
-  setResolveText("重定向解析中...", "pending");
+  setResolveText("正在追踪跳转路径...", "pending");
   setResolveMetaText("");
 
   try {
     const { res, data } = await postJSON("/api/tools/resolve-redirect", { url: sourceUrl });
     if (!res.ok || data?.code !== 0) {
-      throw new Error(data?.message || "重定向解析失败");
+      throw new Error(data?.message || "跳转路径查询失败");
     }
 
     const finalUrl = normalizeText(data?.data?.final_url);
     const redirected = Boolean(data?.data?.redirected);
     const steps = Array.isArray(data?.data?.steps) ? data.data.steps : [];
-    const firstHop = steps.find((step) => step?.location)?.location || "";
     const stepText = steps
       .map((step) => `${step.status}${step.location ? ` → ${step.location}` : ""}`)
       .join(" | ");
 
     if (redirected && finalUrl) {
-      setResolveText(`已解析：${finalUrl}`, "success");
+      setResolveText(`最终跳转到：${finalUrl}`, "success");
     } else {
-      setResolveText("该链接未返回重定向（可能已直出内容）", "pending");
+      setResolveText("该链接没有跳转（可能直接打开了目标页面）", "pending");
     }
-    setResolveMetaText(stepText || "未获取到重定向链路信息");
-
-    if (historyId) {
-      updateHistoryItem(historyId, (item) => ({
-        ...item,
-        resolved: true,
-        lastResolvedFinalUrl: finalUrl || firstHop || item.targetUrl,
-        lastResolvedAt: new Date().toISOString(),
-        redirectResolvedCount: Number(item.redirectResolvedCount || 0) + 1,
-      }));
-    }
+    setResolveMetaText(stepText || "未获取到跳转路径信息");
   } catch (error) {
-    setResolveText(`解析失败：${String(error.message || error)}`, "error");
+    setResolveText(`查询失败：${String(error.message || error)}`, "error");
     setResolveMetaText("请检查短链是否可访问，或稍后重试。");
-  }
-}
-
-function openRedirectForUrl(url, historyId = "") {
-  const sourceUrl = normalizeText(url);
-  if (!sourceUrl) return;
-  const redirectUrl = buildRedirectProxyUrl(sourceUrl);
-  window.open(redirectUrl, "_blank", "noopener,noreferrer");
-
-  if (historyId) {
-    updateHistoryItem(historyId, (item) => ({
-      ...item,
-      redirectTestCount: Number(item.redirectTestCount || 0) + 1,
-    }));
   }
 }
 
@@ -703,8 +628,10 @@ async function handleHistoryAction(event) {
   if (!item) return;
 
   if (action === "delete") {
-    removeHistoryItem(id);
-    setStatus("已删除本地短链记录", "success");
+    await deleteServerHistoryItem(id);
+    state.historyItems = state.historyItems.filter((it) => String(it.id) !== String(id));
+    renderDashboardHistory();
+    setStatus("已删除短链记录", "success");
     return;
   }
 
@@ -724,8 +651,9 @@ async function handleHistoryAction(event) {
   }
 
   if (action === "redirect") {
-    openRedirectForUrl(item.linkUrl, id);
-    setStatus("已打开重定向测试窗口", "success");
+    const redirectUrl = buildRedirectProxyUrl(item.linkUrl);
+    window.open(redirectUrl, "_blank", "noopener,noreferrer");
+    setStatus("已打开跳转测试窗口", "success");
     return;
   }
 
@@ -767,16 +695,18 @@ function bindDashboardEvents() {
         return;
       }
       exportHistoryAsJson();
-      setStatus("已导出本地短链记录", "success");
+      setStatus("已导出短链记录", "success");
     });
   }
   if (clearHistoryBtn) {
-    clearHistoryBtn.addEventListener("click", () => {
+    clearHistoryBtn.addEventListener("click", async () => {
       if (state.historyItems.length === 0) return;
-      const confirmed = window.confirm("确认清空本地短链列表吗？此操作不会影响小码后台数据。");
+      const confirmed = window.confirm("确认清空所有短链历史记录吗？此操作不可恢复。");
       if (!confirmed) return;
-      setHistoryItems([]);
-      setStatus("已清空本地短链列表", "success");
+      await clearServerHistory();
+      state.historyItems = [];
+      renderDashboardHistory();
+      setStatus("已清空短链历史记录", "success");
     });
   }
 
@@ -802,16 +732,25 @@ function bindDashboardEvents() {
       event.preventDefault();
       closeDialog(qrModal);
     });
+    qrModal.addEventListener("click", (event) => {
+      if (event.target === qrModal) closeDialog(qrModal);
+    });
   }
 
-  if (copyQrSourceBtn) {
-    copyQrSourceBtn.addEventListener("click", async () => {
-      if (!state.qrModal.sourceUrl) return;
+  const copyQrImageBtn = document.querySelector("#copyQrImageBtn");
+  if (copyQrImageBtn) {
+    copyQrImageBtn.addEventListener("click", async () => {
+      if (!state.qrModal.dataUrl) return;
       try {
-        await copyText(state.qrModal.sourceUrl);
-        setStatus("短链已复制到剪贴板", "success");
+        const res = await fetch(state.qrModal.dataUrl);
+        const blob = await res.blob();
+        await navigator.clipboard.write([
+          new ClipboardItem({ "image/png": blob }),
+        ]);
+        copyQrImageBtn.textContent = "已复制";
+        setTimeout(() => { copyQrImageBtn.textContent = "复制二维码"; }, 1500);
       } catch {
-        setStatus("复制失败，请手动复制", "error");
+        setStatus("复制失败，请长按图片保存", "error");
       }
     });
   }
@@ -828,16 +767,23 @@ function bindDashboardEvents() {
     });
   }
 
-  if (openQrSourceBtn) {
-    openQrSourceBtn.addEventListener("click", () => {
+  const copyQrLinkBtn = document.querySelector("#copyQrLinkBtn");
+  if (copyQrLinkBtn) {
+    copyQrLinkBtn.addEventListener("click", async () => {
       if (!state.qrModal.sourceUrl) return;
-      openRedirectForUrl(state.qrModal.sourceUrl);
+      try {
+        await copyText(state.qrModal.sourceUrl);
+        copyQrLinkBtn.textContent = "已复制";
+        setTimeout(() => { copyQrLinkBtn.textContent = "复制"; }, 1500);
+      } catch {
+        setStatus("复制失败", "error");
+      }
     });
   }
 }
 
 function initDashboardState() {
-  state.historyItems = loadHistoryItems();
+  state.historyItems = [];
   state.filters.search = "";
   state.filters.group = "";
   state.filters.status = historyStatusFilter?.value || "all";
@@ -898,16 +844,6 @@ function setDomainsLoading(loading) {
   }
 }
 
-async function postJSON(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
-  const data = await res.json().catch(() => ({}));
-  return { res, data };
-}
-
 function requireApiKeyForMeta() {
   if (state.serverHasApiKey) return "";
   const apikey = getCurrentApiKey();
@@ -965,11 +901,6 @@ async function loadProjects({ forceUi = false, background = false } = {}) {
       refreshGroupsBtn.disabled = !projectSelect.value;
       openCreateGroupBtn.disabled = !projectSelect.value;
       if (projectSelect.value) {
-        const selectedProject = getSelectedProject();
-        const selectedProjectName = selectedProject?.name || "未命名项目";
-        setMetaText(
-          `默认项目：${selectedProjectName}（缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
-        );
         await loadGroups({ background });
       } else {
         state.groups = [];
@@ -1044,9 +975,6 @@ async function loadGroups({ forceUi = false, background = false } = {}) {
       if (!groupSelect.value && groups.length >= 1) {
         groupSelect.value = groups[0].id;
       }
-      setMetaText(
-        `分组列表已更新（${groups.length} 项，缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
-      );
     } catch (error) {
       setInlineError(`加载分组失败：${String(error.message || error)}`);
       setMetaText("分组列表加载失败");
@@ -1103,9 +1031,6 @@ async function loadDomains({ forceUi = false, background = false } = {}) {
         getLabel: (item) => `${item.domain}${item.ssl_enabled ? " · HTTPS" : " · HTTP"}`,
       });
       if (currentValue) domainSelect.value = currentValue;
-      setMetaText(
-        `自有域名已更新（${domains.length} 项，缓存：${data?._meta?.cache || "unknown"}${background ? "，静默刷新" : ""}）`
-      );
     } catch (error) {
       setInlineError(`加载自有域名失败：${String(error.message || error)}`);
       setMetaText("自有域名列表加载失败");
@@ -1132,7 +1057,7 @@ function syncMutualExclusionHints() {
   const bot = $("advanced_bot_detection").checked;
   if (wechat && bot) {
     setInlineError("根据小码文档，微信内强制浏览器打开 与 深度过滤机器访问 不能同时开启。");
-    moreOptions.open = true;
+    openSettingsModal();
   } else if (
     formError.textContent.includes("微信内强制浏览器打开 与 深度过滤机器访问")
   ) {
@@ -1143,20 +1068,26 @@ function syncMutualExclusionHints() {
 function collectPayload() {
   const fd = new FormData(form);
   const get = (key) => normalizeText(fd.get(key));
+
+  // Get group name for server-side history
+  const groupLabel = groupSelect?.selectedOptions?.[0]?.textContent || "";
+  const groupName = extractGroupNameFromLabel(groupLabel);
+
   const payload = {
     apikey: get("apikey"),
-    project_id: get("project_id"), // UI only (for convenience; not used by create API)
+    project_id: get("project_id"),
     group_id: get("group_id"),
     target_url: get("target_url"),
     name: get("name"),
     domain: get("domain"),
     key: get("key"),
     key_length: get("key_length"),
-    webhook_callback_url: get("webhook_callback_url"), // UI only
+    webhook_callback_url: get("webhook_callback_url"),
     webhook_scene: get("webhook_scene"),
     escape_from_wechat: fd.get("escape_from_wechat") === "on",
     advanced_bot_detection: fd.get("advanced_bot_detection") === "on",
     webhook: fd.get("webhook") === "on",
+    _group_name: groupName,
   };
 
   for (const key of [
@@ -1192,7 +1123,6 @@ function validatePayload(payload) {
   try {
     url = new URL(payload.target_url);
   } catch {
-    // Check if it looks like a domain missing protocol
     const raw = payload.target_url.trim();
     if (raw.includes(".") && !raw.includes(" ") && !/^(\w+):\/\//.test(raw)) {
       const suggested = "https://" + raw;
@@ -1238,7 +1168,6 @@ function validatePayload(payload) {
     delete payload.webhook_scene;
   }
 
-  // create API does not need project_id or webhook callback URL.
   delete payload.project_id;
   return "";
 }
@@ -1253,15 +1182,14 @@ async function handleSubmit(event) {
   submitBtn.disabled = true;
 
   const payload = collectPayload();
-  const payloadForHistory = { ...payload };
   const validationError = validatePayload(payload);
   if (validationError) {
     const errMsg = typeof validationError === "object" ? validationError.message : validationError;
     const errSuggestion = typeof validationError === "object" ? validationError.suggestion : null;
     setInlineError(errMsg, errSuggestion);
-    setStatus("表单校验未通过", "error");
+    setStatus("");
     if (errMsg.includes("Webhook") || errMsg.includes("后缀") || errMsg.includes("过滤")) {
-      moreOptions.open = true;
+      openSettingsModal();
     }
     submitBtn.disabled = false;
     return;
@@ -1288,14 +1216,12 @@ async function handleSubmit(event) {
 
     const linkUrl = data?.data?.link_url || "";
     setLinkResult(linkUrl);
-    setStatus(`成功：${data?.message || "创建成功"}`, "success");
-    setMetaText("短链创建成功");
+    setStatus("短链创建成功", "success");
+    setMetaText("");
+
+    // Reload server history to include new item
     if (linkUrl) {
-      upsertHistoryItemFromCreate({
-        linkUrl,
-        payload: payloadForHistory,
-        responseData: data,
-      });
+      await loadServerHistory();
     }
   } catch (error) {
     setStatus(`网络错误：${String(error.message || error)}`, "error");
@@ -1309,14 +1235,13 @@ async function handleSubmit(event) {
 
 function handleReset() {
   setInlineError("");
-  setStatus("等待提交");
+  setStatus("");
   setMetaText("");
   setResolveText("");
   setResolveMetaText("");
   setJsonOutput({});
   setLinkResult("");
 
-  // Restore defaults after reset.
   $("advanced_bot_detection").checked = true;
   $("webhook").checked = true;
   $("escape_from_wechat").checked = false;
@@ -1478,7 +1403,7 @@ async function loadConfig() {
     );
 
     applyDefaultsFromConfig(config);
-    setStatus("准备就绪");
+    setStatus("");
 
     if (state.serverHasApiKey || getCurrentApiKey()) {
       loadProjects();
@@ -1505,14 +1430,7 @@ function wireEvents() {
   copyLinkBtn.addEventListener("click", copyLatestLink);
   if (openLinkBtn) {
     openLinkBtn.addEventListener("click", () => {
-      if (!state.latestLinkUrl) return;
-      const item = state.historyItems.find((it) => it.linkUrl === state.latestLinkUrl);
-      if (item) {
-        updateHistoryItem(item.id, (next) => ({
-          ...next,
-          redirectTestCount: Number(next.redirectTestCount || 0) + 1,
-        }));
-      }
+      // No-op for now — redirect tracking removed with server history
     });
   }
 
@@ -1551,9 +1469,81 @@ function wireEvents() {
   bindDashboardEvents();
 }
 
+// ===== Auth Flow =====
+function showLoginGate() {
+  loginGate.hidden = false;
+  topbar.hidden = true;
+  mainShell.hidden = true;
+}
+
+function showApp(user) {
+  loginGate.hidden = true;
+  topbar.hidden = false;
+  mainShell.hidden = false;
+
+  if (user) {
+    state.currentUser = user;
+    topbarUser.hidden = false;
+    topbarName.textContent = user.name || "";
+    if (user.avatarUrl) {
+      topbarAvatar.src = user.avatarUrl;
+      topbarAvatar.alt = user.name || "";
+    } else {
+      topbarAvatar.style.display = "none";
+    }
+  }
+}
+
+async function checkSession() {
+  try {
+    const res = await fetch("/api/auth/session");
+    const data = await res.json();
+    if (data.ok && data.loggedIn && data.user) {
+      showApp(data.user);
+      return true;
+    }
+  } catch {
+    // fallthrough
+  }
+  showLoginGate();
+  return false;
+}
+
+async function handleLogout() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch {
+    // ignore
+  }
+  state.currentUser = null;
+  state.historyItems = [];
+  showLoginGate();
+}
+
+// ===== Settings Modal =====
+const settingsModal = document.querySelector("#settingsModal");
+const openSettingsBtn = document.querySelector("#openSettingsBtn");
+const closeSettingsBtn = document.querySelector("#closeSettingsBtn");
+const closeSettingsDoneBtn = document.querySelector("#closeSettingsDoneBtn");
+
+function openSettingsModal() {
+  if (settingsModal) settingsModal.showModal();
+}
+
+if (openSettingsBtn) openSettingsBtn.addEventListener("click", openSettingsModal);
+if (closeSettingsBtn) closeSettingsBtn.addEventListener("click", () => settingsModal.close());
+if (closeSettingsDoneBtn) closeSettingsDoneBtn.addEventListener("click", () => settingsModal.close());
+if (settingsModal) settingsModal.addEventListener("click", (e) => {
+  if (e.target === settingsModal) settingsModal.close();
+});
+
+// ===== Logout button =====
+if (logoutBtn) logoutBtn.addEventListener("click", handleLogout);
+
+// ===== Init =====
 setJsonOutput({});
 setLinkResult("");
-setStatus("初始化中...");
+setStatus("");
 setMetaText("");
 setResolveText("");
 setResolveMetaText("");
@@ -1564,7 +1554,14 @@ groupSelect.disabled = true;
 refreshGroupsBtn.disabled = true;
 openCreateGroupBtn.disabled = true;
 
-initDashboardState();
-wireEvents();
-loadConfig();
-
+// Start auth flow
+(async () => {
+  const loggedIn = await checkSession();
+  if (loggedIn) {
+    initDashboardState();
+    wireEvents();
+    loadConfig();
+    await migrateLocalStorageHistory();
+    await loadServerHistory();
+  }
+})();
