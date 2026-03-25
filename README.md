@@ -11,8 +11,14 @@
 - 自有域名下拉选择（自动拉取）
 - 元数据服务端缓存（项目/分组/自有域名）
 - 高级选项折叠（名称、域名、后缀、webhook、访问过滤）
+- 短链二维码生成（服务端 `qrcode` 库生成，支持预览与下载）
+- 重定向链解析（`/api/tools/resolve-redirect`，追踪完整跳转链路）
+- 短链重定向代理（`/go?url=`，302 跳转）
+- 本地短链列表（localStorage，支持搜索、分组筛选、状态筛选、导出）
+- Dashboard 统计卡片（短链总数、重定向测试、二维码生成、重定向解析）
+- 健康检查接口（`/api/health`）
 
-## 默认行为（符合你的要求）
+## 默认行为
 
 - `微信内强制浏览器打开`：默认关闭
 - `深度过滤机器访问`：默认开启
@@ -31,6 +37,12 @@ npm install
 npm start
 ```
 
+开发模式（文件变更自动重启）：
+
+```bash
+npm run dev
+```
+
 打开：
 
 - `http://localhost:3000`
@@ -45,23 +57,25 @@ npm start
 
 ## 环境变量
 
-参见 `/Users/simba/local_vibecoding/short-url/.env.example`
+参见 `.env.example`
 
 - `XIAOMARK_API_KEY`：服务端代理使用的小码 API Key
-- `DEFAULT_WEBHOOK_CALLBACK_URL`：前端“更多选项”默认显示的 webhook 地址（不提交到创建接口）
+- `DEFAULT_WEBHOOK_CALLBACK_URL`：前端”更多选项”默认显示的 webhook 地址（不提交到创建接口）
 - `DEFAULT_WEBHOOK_SCENE`：默认 webhook 场景值（可选）
-- `XIAOMARK_CACHE_TTL_MS`：元数据缓存时间（毫秒）
-- `PORT`：服务端端口
+- `XIAOMARK_CACHE_TTL_MS`：元数据缓存时间（毫秒，默认 30000）
+- `PORT`：服务端端口（默认 3000）
 
 ## 部署到服务器
 
-详见 `/Users/simba/local_vibecoding/short-url/DEPLOY.md`
+详见 `DEPLOY.md`
 
 ## 目录结构
 
-- `/Users/simba/local_vibecoding/short-url/server.js`：Node/Express 代理与元数据 API
-- `/Users/simba/local_vibecoding/short-url/public/index.html`：页面结构
-- `/Users/simba/local_vibecoding/short-url/public/app.js`：前端逻辑（下拉拉取、弹窗创建分组、提交）
-- `/Users/simba/local_vibecoding/short-url/public/styles.css`：样式
-- `/Users/simba/local_vibecoding/short-url/docs/xiaomark-api/`：导出的 API 文档 Markdown
+- `server.js`：Node/Express 代理与元数据 API、QR 码生成、重定向解析
+- `public/index.html`：页面结构
+- `public/app.js`：前端逻辑（下拉拉取、弹窗创建分组、提交、历史列表、二维码、重定向解析）
+- `public/styles.css`：样式
+- `ecosystem.config.cjs`：PM2 部署配置
+- `scripts/fetch_xiaomark_api_docs.py`：小码 API 文档抓取脚本
+- `docs/xiaomark-api/`：导出的 API 文档 Markdown
 
