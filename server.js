@@ -491,7 +491,7 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-app.post("/api/meta/projects", requireAuth, async (req, res) => {
+app.post("/api/meta/projects", async (req, res) => {
   return handleCachedListProxy({
     req,
     res,
@@ -502,7 +502,7 @@ app.post("/api/meta/projects", requireAuth, async (req, res) => {
   });
 });
 
-app.post("/api/meta/private-domains", requireAuth, async (req, res) => {
+app.post("/api/meta/private-domains", async (req, res) => {
   return handleCachedListProxy({
     req,
     res,
@@ -513,7 +513,7 @@ app.post("/api/meta/private-domains", requireAuth, async (req, res) => {
   });
 });
 
-app.post("/api/meta/groups", requireAuth, async (req, res) => {
+app.post("/api/meta/groups", async (req, res) => {
   try {
     const projectId = cleanOptionalString(req.body?.project_id);
     if (!projectId) {
@@ -537,7 +537,7 @@ app.post("/api/meta/groups", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/meta/groups/create", requireAuth, async (req, res) => {
+app.post("/api/meta/groups/create", async (req, res) => {
   try {
     const body = req.body ?? {};
     const apikey = getEffectiveApiKey(body);
@@ -582,7 +582,7 @@ app.post("/api/meta/groups/create", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/shortlinks/create", requireAuth, async (req, res) => {
+app.post("/api/shortlinks/create", async (req, res) => {
   try {
     const body = req.body ?? {};
     const apikey = getEffectiveApiKey(body);
@@ -654,12 +654,13 @@ app.post("/api/shortlinks/create", requireAuth, async (req, res) => {
 
     const upstream = await postXiaomark("/v2/sl/link/create", payload, 15000);
 
-    // Save to history if creation succeeded
-    if (upstream.data?.code === 0 && upstream.data?.data?.link_url) {
+    // Save to history if creation succeeded and user is logged in
+    const session = resolveSession(req);
+    if (session && upstream.data?.code === 0 && upstream.data?.data?.link_url) {
       const linkUrl = upstream.data.data.link_url;
       const groupLabel = body._group_name || "";
       stmtInsertHistory.run(
-        req.session.open_id,
+        session.open_id,
         linkUrl,
         targetUrl,
         cleanOptionalString(body.name) || "",

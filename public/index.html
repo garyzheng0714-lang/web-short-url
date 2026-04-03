@@ -8,28 +8,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260228c" />
+    <link rel="stylesheet" href="/styles.css?v=20260403b" />
   </head>
   <body>
-    <!-- Login Gate -->
-    <div id="loginGate" class="login-gate">
-      <div class="login-card">
-        <svg class="login-logo" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <h1 class="login-title">FBIF 短链工具</h1>
-        <p class="login-desc">快速创建短链、生成二维码、管理跳转记录</p>
-        <a href="/api/auth/feishu/login" class="btn btn-feishu" id="feishuLoginBtn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 4.5L10.5 12L3 19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 4.5L18 12L10.5 19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          飞书登录
-        </a>
-      </div>
-    </div>
-
     <!-- Topbar -->
-    <nav class="topbar" id="topbar" hidden>
+    <nav class="topbar" id="topbar">
       <div class="topbar-inner">
         <a class="brand" href="#createForm">
-          <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          <span class="brand-text">FBIF 短链</span>
+          <img class="brand-icon" src="https://fbif-feishu-base.oss-cn-shanghai.aliyuncs.com/fbif-attachment-to-url/2026/02/tblu5FXYOkS5dTd9_y9iObCDnfAHNWE-sPctj8A_1771999146730/FBIF-%E7%99%BD%E5%BA%95_1771999147101.png" alt="FBIF" width="24" height="24" />
+          <span class="brand-text">FBIF 短链工具</span>
         </a>
         <div class="topbar-right">
           <div class="topbar-user" id="topbarUser" hidden>
@@ -46,7 +33,7 @@
     <!-- Hidden badges for JS compatibility -->
     <div hidden><span id="configBadge"></span><span id="cacheBadge"></span></div>
 
-    <main class="shell" id="mainShell" hidden>
+    <main class="shell" id="mainShell">
       <!-- Hidden: stats IDs for app.js -->
       <div hidden>
         <div id="statTotalLinks">0</div>
@@ -59,12 +46,11 @@
       <div class="create-card">
         <form id="createForm" novalidate>
           <select name="project_id" id="projectSelect" hidden aria-hidden="true"></select>
-          <input type="hidden" name="domain" value="t.fbif.com" />
           <input type="hidden" name="webhook_callback_url" value="" />
           <input type="hidden" name="webhook_scene" value="短链工具生成" />
-          <select id="domainSelect" hidden aria-hidden="true"><option value="t.fbif.com" selected>t.fbif.com</option></select>
           <input type="hidden" id="webhookCallbackUrl" />
 
+          <input type="hidden" name="domain" id="domainInput" value="t.fbif.com" />
           <div class="input-row">
             <input
               class="input-main"
@@ -76,7 +62,16 @@
               inputmode="url"
               autocomplete="off"
             />
-            <button type="submit" class="btn btn-primary" id="submitBtn">缩短</button>
+            <div class="split-btn" id="splitBtn">
+              <button type="submit" class="split-btn-main" id="submitBtn">生成短链</button>
+              <button type="button" class="split-btn-toggle" id="splitBtnToggle" aria-label="选择域名">
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="split-btn-menu" id="splitBtnMenu">
+                <div class="split-btn-option selected" data-domain="t.fbif.com">t.fbif.com</div>
+                <div class="split-btn-option" data-domain="t.foodtalks.cn">t.foodtalks.cn</div>
+              </div>
+            </div>
           </div>
 
           <div id="formError" class="form-error" hidden></div>
@@ -108,7 +103,13 @@
 
       <!-- History -->
       <section class="history-section">
-        <div class="history-header">
+        <!-- Login hint for guests -->
+        <div class="history-login-hint" id="historyLoginHint">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span><a href="/api/auth/feishu/login">登录飞书</a>后可保存短链生成记录，跨设备同步历史</span>
+        </div>
+
+        <div class="history-header" id="historyHeader" hidden>
           <h2 class="history-title">历史记录 <span id="historyCount" class="title-count">(0)</span></h2>
           <div class="list-head-actions">
             <button type="button" class="btn btn-ghost btn-sm" id="exportHistoryBtn">导出</button>
@@ -116,7 +117,7 @@
           </div>
         </div>
 
-        <div class="list-toolbar">
+        <div class="list-toolbar" id="historyToolbar" hidden>
           <input class="input" type="search" id="historySearchInput" placeholder="搜索..." />
           <select id="historyGroupFilter" aria-label="按分组筛选">
             <option value="">全部分组</option>
@@ -128,7 +129,7 @@
           </select>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap" id="historyTableWrap" hidden>
           <table class="history-table">
             <thead>
               <tr><th class="col-short">短链</th><th class="col-target">目标链接</th><th class="col-group">分组</th><th class="col-clicks">创建时间</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr>
@@ -269,6 +270,6 @@
     <script>
     (function(){var C="csel";function wrap(n){if(n.dataset.csel)return;n.dataset.csel="1";n.classList.add("csel-native");var b=document.createElement("div");b.className=C;var t=document.createElement("button");t.type="button";t.className="csel-trigger";var l=document.createElement("span");l.className="csel-label";var a=document.createElement("span");a.className="csel-arrow";a.innerHTML="&#x25BE;";t.appendChild(l);t.appendChild(a);var d=document.createElement("div");d.className="csel-list";b.appendChild(t);b.appendChild(d);n.parentNode.insertBefore(b,n);b.appendChild(n);var desc=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value");if(desc&&desc.set){Object.defineProperty(n,"value",{get:function(){return desc.get.call(this)},set:function(v){desc.set.call(this,v);sync()},configurable:true})}function sync(){d.innerHTML="";for(var i=0;i<n.options.length;i++){var o=n.options[i];var div=document.createElement("div");div.className="csel-option"+(o.value===n.value?" selected":"")+(!o.value?" placeholder":"");div.dataset.value=o.value;div.textContent=o.textContent;d.appendChild(div)}var s=n.options[n.selectedIndex];l.textContent=s?s.textContent:"";l.classList.toggle("placeholder",!n.value);t.disabled=n.disabled}t.addEventListener("click",function(){if(t.disabled)return;var w=b.classList.contains("open");closeAll();if(!w){b.classList.add("open");var ac=d.querySelector(".selected");if(ac)ac.scrollIntoView({block:"nearest"})}});d.addEventListener("click",function(e){var it=e.target.closest(".csel-option");if(!it)return;desc.set.call(n,it.dataset.value);n.dispatchEvent(new Event("change",{bubbles:true}));b.classList.remove("open");sync()});new MutationObserver(function(){requestAnimationFrame(sync)}).observe(n,{childList:true,subtree:true,attributes:true});n.addEventListener("change",sync);sync()}function closeAll(){document.querySelectorAll("."+C+".open").forEach(function(el){el.classList.remove("open")})}document.addEventListener("click",function(e){if(!e.target.closest("."+C))closeAll()});document.addEventListener("keydown",function(e){if(e.key==="Escape")closeAll()});function init(){document.querySelectorAll("select:not([hidden])").forEach(wrap)}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init)}else{init()}})();
     </script>
-    <script type="module" src="/app.js?v=20260228c"></script>
+    <script type="module" src="/app.js?v=20260403b"></script>
   </body>
 </html>

@@ -1,11 +1,13 @@
 // ===== Auth Elements =====
-const loginGate = document.querySelector("#loginGate");
-const topbar = document.querySelector("#topbar");
-const mainShell = document.querySelector("#mainShell");
+const topbarLoginBtn = document.querySelector("#topbarLoginBtn");
 const topbarUser = document.querySelector("#topbarUser");
 const topbarAvatar = document.querySelector("#topbarAvatar");
 const topbarName = document.querySelector("#topbarName");
 const logoutBtn = document.querySelector("#logoutBtn");
+const historyLoginHint = document.querySelector("#historyLoginHint");
+const historyHeader = document.querySelector("#historyHeader");
+const historyToolbar = document.querySelector("#historyToolbar");
+const historyTableWrap = document.querySelector("#historyTableWrap");
 
 // ===== App Elements =====
 const form = document.querySelector("#createForm");
@@ -16,7 +18,6 @@ const cacheBadge = document.querySelector("#cacheBadge");
 const keyField = document.querySelector("[data-key-field]");
 const projectSelect = document.querySelector("#projectSelect");
 const groupSelect = document.querySelector("#groupSelect");
-const domainSelect = document.querySelector("#domainSelect");
 const refreshGroupsBtn = document.querySelector("#refreshGroupsBtn");
 const refreshDomainsBtn = document.querySelector("#refreshDomainsBtn");
 const openCreateGroupBtn = document.querySelector("#openCreateGroupBtn");
@@ -836,12 +837,8 @@ function setGroupsLoading(loading, message = "加载分组中...") {
   }
 }
 
-function setDomainsLoading(loading) {
-  domainSelect.disabled = loading;
-  refreshDomainsBtn.disabled = loading;
-  if (loading) {
-    domainSelect.innerHTML = `<option value="">加载域名中...</option>`;
-  }
+function setDomainsLoading(_loading) {
+  // Domain picker is now a static select with hardcoded options; no loading needed
 }
 
 function requireApiKeyForMeta() {
@@ -996,60 +993,9 @@ async function loadGroups({ forceUi = false, background = false } = {}) {
   return state.inflight.groups;
 }
 
-async function loadDomains({ forceUi = false, background = false } = {}) {
-  if (state.inflight.domains) return state.inflight.domains;
-  const keyErr = requireApiKeyForMeta();
-  if (keyErr) {
-    setInlineError(keyErr);
-    return;
-  }
-
-  const now = Date.now();
-  if (!forceUi && now - state.lastFetchTick.domains < 300) return;
-  state.lastFetchTick.domains = now;
-
-  if (!background) {
-    setDomainsLoading(true);
-  }
-  setInlineError("");
-
-  state.inflight.domains = (async () => {
-    try {
-      const currentValue = domainSelect.value;
-      const { res, data } = await postJSON("/api/meta/private-domains", getApiKeyRequestPart());
-      if (!res.ok || data?.code !== 0) {
-        throw new Error(data?.message || "自有域名列表加载失败");
-      }
-
-      const domains = Array.isArray(data?.data?.private_domains)
-        ? data.data.private_domains
-        : [];
-      state.domains = domains;
-      populateSelect(domainSelect, domains, {
-        placeholder: "默认域名（不指定，使用小码默认）",
-        getValue: (item) => item.domain,
-        getLabel: (item) => `${item.domain}${item.ssl_enabled ? " · HTTPS" : " · HTTP"}`,
-      });
-      if (currentValue) domainSelect.value = currentValue;
-    } catch (error) {
-      setInlineError(`加载自有域名失败：${String(error.message || error)}`);
-      setMetaText("自有域名列表加载失败");
-      if (!background) {
-        state.domains = [];
-        populateSelect(domainSelect, [], { placeholder: "加载域名失败" });
-      }
-    } finally {
-      if (!background) {
-        setDomainsLoading(false);
-      } else {
-        domainSelect.disabled = false;
-        refreshDomainsBtn.disabled = false;
-      }
-      state.inflight.domains = null;
-    }
-  })();
-
-  return state.inflight.domains;
+async function loadDomains() {
+  // Domain picker is now a static select with hardcoded options (t.fbif.com, t.foodtalks.cn).
+  // No API call needed.
 }
 
 function syncMutualExclusionHints() {
@@ -1460,9 +1406,7 @@ function wireEvents() {
     populateSelect(projectSelect, [], { placeholder: "默认项目" });
     projectSelect.value = "";
     populateSelect(groupSelect, [], { placeholder: "正在加载默认项目分组..." });
-    populateSelect(domainSelect, [], { placeholder: "默认域名（不指定，使用小码默认）" });
     loadProjects({ forceUi: true });
-    loadDomains({ forceUi: true });
   });
 
   setupSelectRefreshTriggers();
@@ -1470,28 +1414,33 @@ function wireEvents() {
 }
 
 // ===== Auth Flow =====
-function showLoginGate() {
-  loginGate.hidden = false;
-  topbar.hidden = true;
-  mainShell.hidden = true;
+function showLoggedIn(user) {
+  state.currentUser = user;
+  if (topbarLoginBtn) topbarLoginBtn.hidden = true;
+  topbarUser.hidden = false;
+  topbarName.textContent = user.name || "";
+  if (user.avatarUrl) {
+    topbarAvatar.src = user.avatarUrl;
+    topbarAvatar.alt = user.name || "";
+  } else {
+    topbarAvatar.style.display = "none";
+  }
+  // Show history section
+  if (historyLoginHint) historyLoginHint.hidden = true;
+  if (historyHeader) historyHeader.hidden = false;
+  if (historyToolbar) historyToolbar.hidden = false;
+  if (historyTableWrap) historyTableWrap.hidden = false;
 }
 
-function showApp(user) {
-  loginGate.hidden = true;
-  topbar.hidden = false;
-  mainShell.hidden = false;
-
-  if (user) {
-    state.currentUser = user;
-    topbarUser.hidden = false;
-    topbarName.textContent = user.name || "";
-    if (user.avatarUrl) {
-      topbarAvatar.src = user.avatarUrl;
-      topbarAvatar.alt = user.name || "";
-    } else {
-      topbarAvatar.style.display = "none";
-    }
-  }
+function showLoggedOut() {
+  state.currentUser = null;
+  if (topbarLoginBtn) topbarLoginBtn.hidden = false;
+  topbarUser.hidden = true;
+  // Show login hint, hide history
+  if (historyLoginHint) historyLoginHint.hidden = false;
+  if (historyHeader) historyHeader.hidden = true;
+  if (historyToolbar) historyToolbar.hidden = true;
+  if (historyTableWrap) historyTableWrap.hidden = true;
 }
 
 async function checkSession() {
@@ -1499,13 +1448,13 @@ async function checkSession() {
     const res = await fetch("/api/auth/session");
     const data = await res.json();
     if (data.ok && data.loggedIn && data.user) {
-      showApp(data.user);
+      showLoggedIn(data.user);
       return true;
     }
   } catch {
     // fallthrough
   }
-  showLoginGate();
+  showLoggedOut();
   return false;
 }
 
@@ -1515,9 +1464,9 @@ async function handleLogout() {
   } catch {
     // ignore
   }
-  state.currentUser = null;
   state.historyItems = [];
-  showLoginGate();
+  renderDashboardHistory();
+  showLoggedOut();
 }
 
 // ===== Settings Modal =====
@@ -1540,6 +1489,36 @@ if (settingsModal) settingsModal.addEventListener("click", (e) => {
 // ===== Logout button =====
 if (logoutBtn) logoutBtn.addEventListener("click", handleLogout);
 
+// ===== Split Button (Domain Picker) =====
+(function () {
+  const splitBtn = document.querySelector("#splitBtn");
+  const toggle = document.querySelector("#splitBtnToggle");
+  const menu = document.querySelector("#splitBtnMenu");
+  const domainInput = document.querySelector("#domainInput");
+  if (!splitBtn || !toggle || !menu || !domainInput) return;
+
+  toggle.addEventListener("click", (e) => {
+    e.preventDefault();
+    splitBtn.classList.toggle("open");
+  });
+
+  menu.addEventListener("click", (e) => {
+    const opt = e.target.closest(".split-btn-option");
+    if (!opt) return;
+    const domain = opt.dataset.domain;
+    domainInput.value = domain;
+    menu.querySelectorAll(".split-btn-option").forEach((o) => o.classList.remove("selected"));
+    opt.classList.add("selected");
+    splitBtn.classList.remove("open");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#splitBtn")) {
+      splitBtn.classList.remove("open");
+    }
+  });
+})();
+
 // ===== Init =====
 setJsonOutput({});
 setLinkResult("");
@@ -1549,18 +1528,18 @@ setResolveText("");
 setResolveMetaText("");
 populateSelect(projectSelect, [], { placeholder: "默认项目" });
 populateSelect(groupSelect, [], { placeholder: "正在加载默认项目分组..." });
-populateSelect(domainSelect, [], { placeholder: "默认域名（不指定，使用小码默认）" });
 groupSelect.disabled = true;
 refreshGroupsBtn.disabled = true;
 openCreateGroupBtn.disabled = true;
 
-// Start auth flow
+initDashboardState();
+wireEvents();
+loadConfig();
+
+// Check auth in background
 (async () => {
   const loggedIn = await checkSession();
   if (loggedIn) {
-    initDashboardState();
-    wireEvents();
-    loadConfig();
     await migrateLocalStorageHistory();
     await loadServerHistory();
   }
