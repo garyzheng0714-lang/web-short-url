@@ -1,0 +1,23 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [codex/short-url-ui]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
+            git pull origin codex/short-url-ui
+            npm ci --production
+            pm2 restart web-short-url
+            sleep 2
+            curl -sf http://127.0.0.1:3000/api/health || (echo "Health check failed!" && exit 1)
