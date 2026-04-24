@@ -1,81 +1,144 @@
 # web-short-url
 
-基于小码 API 的短链创建网页（本地/服务器部署均可），通过 Node.js 本地代理调用接口，避免浏览器直连 CORS 问题。
+基于小码 API 的短链创建网页工具，使用 Node.js/Express 做服务端代理，避免浏览器直连第三方 API 的 CORS 和密钥暴露问题。
 
-## 已实现
+## Overview
 
-- 创建单条短链（`/v2/sl/link/create`）
-- 项目下拉选择（自动拉取）
-- 分组下拉选择（按项目拉取）
-- 前端弹窗创建分组（`/v2/sl/group/create`）
-- 自有域名下拉选择（自动拉取）
-- 元数据服务端缓存（项目/分组/自有域名）
-- 高级选项折叠（名称、域名、后缀、webhook、访问过滤）
-- 短链二维码生成（服务端 `qrcode` 库生成，支持预览与下载）
-- 重定向链解析（`/api/tools/resolve-redirect`，追踪完整跳转链路）
-- 短链重定向代理（`/go?url=`，302 跳转）
-- 本地短链列表（localStorage，支持搜索、分组筛选、状态筛选、导出）
-- Dashboard 统计卡片（短链总数、重定向测试、二维码生成、重定向解析）
-- 健康检查接口（`/api/health`）
+应用提供一个轻量网页，用于创建短链、生成二维码、解析跳转链路和管理历史记录。服务端负责代理小码 API、缓存项目/分组/域名元数据、生成 QR Code，并提供可选的飞书 OAuth 登录与 SQLite 历史记录存储。
 
-## 默认行为
+## Features
 
-- `微信内强制浏览器打开`：默认关闭
-- `深度过滤机器访问`：默认开启
-- `开启事件推送（webhook）`：默认开启
-- `随机后缀长度`：默认 `4`
+- 创建单条短链
+- 自动拉取小码项目、分组和自有域名
+- 在前端弹窗创建分组
+- 支持默认域名和随机后缀长度
+- 服务端元数据缓存，缓存时长可配置
+- 短链二维码生成、预览、复制和下载
+- 重定向链解析，便于排查跳转结果
+- `/go?url=` 短链重定向代理
+- 本地历史记录搜索、筛选、清空和导出
+- 可选飞书 OAuth 登录，登录后通过 SQLite 保存历史记录
+- 健康检查接口
+- PM2 和 Nginx 部署说明
 
-说明：
+## Tech Stack
 
-- “Webhook 推送地址（展示/记录用）”字段不会提交给小码创建短链接口，仅用于前端记录和部署核对。
-- Webhook 的推送地址 / 签名 token 仍需在小码后台 `API 设置` 中配置。
+- Node.js with ES modules
+- Express 4
+- better-sqlite3
+- cookie-parser
+- dotenv
+- qrcode
+- Plain HTML/CSS/JavaScript frontend
+- PM2 for process management
 
-## 本地运行
+## Project Structure
+
+```text
+.
+├── server.js                       # Express proxy, auth, history and QR APIs
+├── public/
+│   ├── index.html                  # Frontend page
+│   ├── app.js                      # Browser-side app logic
+│   └── styles.css                  # Styles
+├── docs/xiaomark-api/              # Exported Xiaomark API docs
+├── scripts/fetch_xiaomark_api_docs.py
+├── ecosystem.config.cjs            # PM2 config
+├── DEPLOY.md                       # Server deployment guide
+├── .env.example
+└── package.json
+```
+
+## Getting Started
+
+Install dependencies:
 
 ```bash
 npm install
+```
+
+Create local environment configuration:
+
+```bash
+cp .env.example .env
+```
+
+Start the server:
+
+```bash
 npm start
 ```
 
-开发模式（文件变更自动重启）：
+Development mode with Node's watch mode:
 
 ```bash
 npm run dev
 ```
 
-打开：
+Open:
 
-- `http://localhost:3000`
-
-## 推荐环境变量
-
-```bash
-XIAOMARK_API_KEY=你的apikey \
-DEFAULT_WEBHOOK_CALLBACK_URL='你的webhook回调地址' \
-npm start
+```text
+http://localhost:3000
 ```
 
-## 环境变量
+## Scripts
 
-参见 `.env.example`
+| Command | Description |
+| --- | --- |
+| `npm start` | Run `server.js` |
+| `npm run dev` | Run `server.js` with `node --watch` |
 
-- `XIAOMARK_API_KEY`：服务端代理使用的小码 API Key
-- `DEFAULT_WEBHOOK_CALLBACK_URL`：前端”更多选项”默认显示的 webhook 地址（不提交到创建接口）
-- `DEFAULT_WEBHOOK_SCENE`：默认 webhook 场景值（可选）
-- `XIAOMARK_CACHE_TTL_MS`：元数据缓存时间（毫秒，默认 30000）
-- `PORT`：服务端端口（默认 3000）
+## Configuration
 
-## 部署到服务器
+Variables from `.env.example`:
 
-详见 `DEPLOY.md`
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | Server port, default `3000` |
+| `XIAOMARK_API_KEY` | Server-side Xiaomark API key |
+| `DEFAULT_WEBHOOK_CALLBACK_URL` | Display/default value for the advanced webhook field |
+| `DEFAULT_WEBHOOK_SCENE` | Default webhook scene value |
+| `XIAOMARK_CACHE_TTL_MS` | Metadata cache TTL in milliseconds |
 
-## 目录结构
+The server code also supports optional Feishu OAuth settings for login and server-side history:
 
-- `server.js`：Node/Express 代理与元数据 API、QR 码生成、重定向解析
-- `public/index.html`：页面结构
-- `public/app.js`：前端逻辑（下拉拉取、弹窗创建分组、提交、历史列表、二维码、重定向解析）
-- `public/styles.css`：样式
-- `ecosystem.config.cjs`：PM2 部署配置
-- `scripts/fetch_xiaomark_api_docs.py`：小码 API 文档抓取脚本
-- `docs/xiaomark-api/`：导出的 API 文档 Markdown
+| Variable | Purpose |
+| --- | --- |
+| `FEISHU_APP_ID` | Feishu app ID |
+| `FEISHU_APP_SECRET` | Feishu app secret |
+| `FEISHU_OAUTH_REDIRECT_URI` | Feishu OAuth callback URL |
 
+Runtime SQLite data is stored in `shorturl.db` in the project directory.
+
+## API Notes
+
+Selected local endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/health` | Health check |
+| `GET /api/auth/feishu/login` | Start optional Feishu OAuth login |
+| `GET /api/auth/session` | Check login session |
+| `GET /api/history` | Read authenticated history |
+| `POST /api/history/migrate` | Migrate browser history into server history |
+| `GET /go?url=<url>` | Redirect proxy |
+
+The create-link and metadata endpoints proxy requests to Xiaomark APIs and require either a server-side `XIAOMARK_API_KEY` or a user-entered API key in the UI.
+
+## Deployment
+
+See [`DEPLOY.md`](DEPLOY.md) for the Node.js + PM2 + Nginx deployment guide.
+
+Typical PM2 flow:
+
+```bash
+npm ci
+pm2 start ecosystem.config.cjs --env production
+pm2 save
+```
+
+## Notes
+
+- Keep API keys and OAuth secrets in environment variables; do not commit `.env`.
+- The “Webhook 推送地址” field is for display/recording in this tool. Xiaomark webhook callback and signing token still need to be configured in the Xiaomark backend.
+- If Feishu OAuth is not configured, the tool can still create short links, but authenticated cross-device history will not be available.
