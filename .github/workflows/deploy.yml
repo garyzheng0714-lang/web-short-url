@@ -15,8 +15,29 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
+            set -e
             cd ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
             git pull origin codex/short-url-ui
+
+            # ---- one-shot, idempotent .env migration: v2 → v3 (dual-tenant) ----
+            if [ -f .env ] && ! grep -q '^FEISHU_FBIF_APP_ID=' .env; then
+              echo "[deploy] migrating .env from v2 to v3 dual-tenant schema"
+              cp .env ".env.bak.$(date +%s)"
+              sed -i 's/^FEISHU_APP_ID=/FEISHU_FBIF_APP_ID=/' .env
+              sed -i 's/^FEISHU_APP_SECRET=/FEISHU_FBIF_APP_SECRET=/' .env
+              sed -i '/^FEISHU_OAUTH_REDIRECT_URI=/d' .env
+              {
+                echo ''
+                echo '# === appended by deploy.yml on v2→v3 migration ==='
+                echo 'FEISHU_FUDE_APP_ID=cli_a975bf6e72b95bc9'
+                echo 'FEISHU_FUDE_APP_SECRET=MAXuPOlGRrvbO234gZyvObLbXBo5PKY4'
+                echo 'FEISHU_REDIRECT_BASE=https://shorturl.garyzheng.com'
+              } >> .env
+              echo "[deploy] .env migrated. Backup: .env.bak.*"
+            else
+              echo "[deploy] .env already on v3 schema, skipping migration"
+            fi
+
             npm ci --production
             pm2 restart web-short-url
             sleep 2

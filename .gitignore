@@ -5,3 +5,5 @@ node_modules/
 shorturl.db
 shorturl.db-shm
 shorturl.db-wal
+.playwright-mcp/
+screenshots/

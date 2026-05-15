@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260403b" />
+    <link rel="stylesheet" href="/styles.css?v=20260515a" />
   </head>
   <body>
     <!-- Topbar -->
@@ -103,12 +103,6 @@
 
       <!-- History -->
       <section class="history-section">
-        <!-- Login hint for guests -->
-        <div class="history-login-hint" id="historyLoginHint">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          <span><a href="/api/auth/feishu/login">登录飞书</a>后可保存短链生成记录，跨设备同步历史</span>
-        </div>
-
         <div class="history-header" id="historyHeader" hidden>
           <h2 class="history-title">历史记录 <span id="historyCount" class="title-count">(0)</span></h2>
           <div class="list-head-actions">
@@ -270,6 +264,6 @@
     <script>
     (function(){var C="csel";function wrap(n){if(n.dataset.csel)return;n.dataset.csel="1";n.classList.add("csel-native");var b=document.createElement("div");b.className=C;var t=document.createElement("button");t.type="button";t.className="csel-trigger";var l=document.createElement("span");l.className="csel-label";var a=document.createElement("span");a.className="csel-arrow";a.innerHTML="&#x25BE;";t.appendChild(l);t.appendChild(a);var d=document.createElement("div");d.className="csel-list";b.appendChild(t);b.appendChild(d);n.parentNode.insertBefore(b,n);b.appendChild(n);var desc=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value");if(desc&&desc.set){Object.defineProperty(n,"value",{get:function(){return desc.get.call(this)},set:function(v){desc.set.call(this,v);sync()},configurable:true})}function sync(){d.innerHTML="";for(var i=0;i<n.options.length;i++){var o=n.options[i];var div=document.createElement("div");div.className="csel-option"+(o.value===n.value?" selected":"")+(!o.value?" placeholder":"");div.dataset.value=o.value;div.textContent=o.textContent;d.appendChild(div)}var s=n.options[n.selectedIndex];l.textContent=s?s.textContent:"";l.classList.toggle("placeholder",!n.value);t.disabled=n.disabled}t.addEventListener("click",function(){if(t.disabled)return;var w=b.classList.contains("open");closeAll();if(!w){b.classList.add("open");var ac=d.querySelector(".selected");if(ac)ac.scrollIntoView({block:"nearest"})}});d.addEventListener("click",function(e){var it=e.target.closest(".csel-option");if(!it)return;desc.set.call(n,it.dataset.value);n.dispatchEvent(new Event("change",{bubbles:true}));b.classList.remove("open");sync()});new MutationObserver(function(){requestAnimationFrame(sync)}).observe(n,{childList:true,subtree:true,attributes:true});n.addEventListener("change",sync);sync()}function closeAll(){document.querySelectorAll("."+C+".open").forEach(function(el){el.classList.remove("open")})}document.addEventListener("click",function(e){if(!e.target.closest("."+C))closeAll()});document.addEventListener("keydown",function(e){if(e.key==="Escape")closeAll()});function init(){document.querySelectorAll("select:not([hidden])").forEach(wrap)}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init)}else{init()}})();
     </script>
-    <script type="module" src="/app.js?v=20260403b"></script>
+    <script type="module" src="/app.js?v=20260515a"></script>
   </body>
 </html>

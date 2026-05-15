@@ -134,37 +134,6 @@
   color: #fff;
 }
 
-/* ===== History Login Hint ===== */
-.history-login-hint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.history-login-hint[hidden] { display: none !important; }
-
-.history-login-hint svg {
-  flex-shrink: 0;
-  color: var(--text-placeholder);
-}
-
-.history-login-hint a {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.history-login-hint a:hover {
-  text-decoration: underline;
-}
-
 /* ===== Topbar User ===== */
 .topbar-right {
   display: flex;

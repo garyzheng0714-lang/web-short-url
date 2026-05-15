@@ -1,10 +1,61 @@
+// ===== Session token bootstrap =====
+// 飞书内嵌 / 客户机 cookie 经常丢；登录回跳 URL 带 #session_token=xxx 作为兜底。
+// 立刻消费 hash，存 sessionStorage，并把所有同源 fetch 自动加上 X-Session-Token header。
+(function bootstrapSessionToken() {
+  let token = "";
+  try {
+    const hash = window.location.hash || "";
+    const m = hash.match(/(?:^|[&#])session_token=([^&]+)/);
+    if (m) {
+      token = decodeURIComponent(m[1]);
+      try {
+        sessionStorage.setItem("shorturl_session_token", token);
+      } catch {}
+      try {
+        window.history.replaceState(
+          {},
+          "",
+          window.location.pathname + window.location.search
+        );
+      } catch {}
+    }
+  } catch {}
+  if (!token) {
+    try {
+      token = sessionStorage.getItem("shorturl_session_token") || "";
+    } catch {}
+  }
+
+  const origFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    init = init || {};
+    let url = "";
+    try {
+      url = typeof input === "string" ? input : input?.url || "";
+    } catch {}
+    const isAbsolute = /^https?:\/\//i.test(url);
+    if (isAbsolute && !url.startsWith(window.location.origin)) {
+      return origFetch(input, init);
+    }
+    const headers = new Headers(
+      init.headers || (typeof input === "object" && input?.headers) || {}
+    );
+    if (token && !headers.has("X-Session-Token")) {
+      headers.set("X-Session-Token", token);
+    }
+    return origFetch(input, {
+      ...init,
+      headers,
+      credentials: init.credentials || "include",
+    });
+  };
+})();
+
 // ===== Auth Elements =====
-const topbarLoginBtn = document.querySelector("#topbarLoginBtn");
 const topbarUser = document.querySelector("#topbarUser");
 const topbarAvatar = document.querySelector("#topbarAvatar");
 const topbarName = document.querySelector("#topbarName");
 const logoutBtn = document.querySelector("#logoutBtn");
-const historyLoginHint = document.querySelector("#historyLoginHint");
 const historyHeader = document.querySelector("#historyHeader");
 const historyToolbar = document.querySelector("#historyToolbar");
 const historyTableWrap = document.querySelector("#historyTableWrap");
@@ -1413,60 +1464,68 @@ function wireEvents() {
   bindDashboardEvents();
 }
 
-// ===== Auth Flow =====
+// ===== Auth Flow（强制登录后只剩"已登录"和"跳登录页"两种状态） =====
 function showLoggedIn(user) {
   state.currentUser = user;
-  if (topbarLoginBtn) topbarLoginBtn.hidden = true;
   topbarUser.hidden = false;
   topbarName.textContent = user.name || "";
   if (user.avatarUrl) {
     topbarAvatar.src = user.avatarUrl;
     topbarAvatar.alt = user.name || "";
+    topbarAvatar.style.display = "";
   } else {
     topbarAvatar.style.display = "none";
   }
-  // Show history section
-  if (historyLoginHint) historyLoginHint.hidden = true;
   if (historyHeader) historyHeader.hidden = false;
   if (historyToolbar) historyToolbar.hidden = false;
   if (historyTableWrap) historyTableWrap.hidden = false;
 }
 
-function showLoggedOut() {
-  state.currentUser = null;
-  if (topbarLoginBtn) topbarLoginBtn.hidden = false;
-  topbarUser.hidden = true;
-  // Show login hint, hide history
-  if (historyLoginHint) historyLoginHint.hidden = false;
-  if (historyHeader) historyHeader.hidden = true;
-  if (historyToolbar) historyToolbar.hidden = true;
-  if (historyTableWrap) historyTableWrap.hidden = true;
+function redirectToLogin() {
+  try {
+    sessionStorage.removeItem("shorturl_session_token");
+  } catch {}
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.replace(`/login?next=${next}`);
 }
 
 async function checkSession() {
   try {
-    const res = await fetch("/api/auth/session");
-    const data = await res.json();
-    if (data.ok && data.loggedIn && data.user) {
-      showLoggedIn(data.user);
-      return true;
+    const res = await fetch("/api/me");
+    if (res.status === 401) {
+      redirectToLogin();
+      return false;
+    }
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok) {
+        showLoggedIn({
+          openId: data.open_id,
+          name: data.name,
+          avatarUrl: data.avatar_url,
+          tenant: data.tenant,
+        });
+        return true;
+      }
     }
   } catch {
-    // fallthrough
+    // 网络问题不要直接跳走，给一次重试机会
+    return false;
   }
-  showLoggedOut();
+  redirectToLogin();
   return false;
 }
 
 async function handleLogout() {
   try {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/auth/feishu/logout", { method: "POST" });
   } catch {
     // ignore
   }
-  state.historyItems = [];
-  renderDashboardHistory();
-  showLoggedOut();
+  try {
+    sessionStorage.removeItem("shorturl_session_token");
+  } catch {}
+  window.location.replace("/login");
 }
 
 // ===== Settings Modal =====
