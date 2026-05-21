@@ -53,6 +53,7 @@ db.exec(`
 // Schema migration: 双租户字段（兼容老库）
 const existingUserCols = new Set(db.prepare(`PRAGMA table_info(users)`).all().map((c) => c.name));
 for (const [col, type] of [
+  ["feishu_open_id", "TEXT DEFAULT ''"],
   ["tenant", "TEXT DEFAULT ''"],
   ["tenant_key", "TEXT DEFAULT ''"],
   ["union_id", "TEXT DEFAULT ''"],
@@ -64,11 +65,73 @@ for (const [col, type] of [
   }
 }
 
+function localUserId(tenant, openId) {
+  return `${tenant || "unknown"}:${openId}`;
+}
+
+const stmtFindUserByOpenId = db.prepare(`SELECT open_id FROM users WHERE open_id = ?`);
+const migrateLegacyUserIds = db.transaction(() => {
+  const legacyRows = db
+    .prepare(
+      `SELECT open_id, tenant
+       FROM users
+       WHERE tenant IN ('fbif', 'fude')
+         AND open_id NOT LIKE 'fbif:%'
+         AND open_id NOT LIKE 'fude:%'`
+    )
+    .all();
+
+  const insertNamespacedUser = db.prepare(`
+    INSERT INTO users (
+      open_id, feishu_open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email,
+      created_at, updated_at
+    )
+    SELECT
+      ?, open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email,
+      created_at, datetime('now')
+    FROM users
+    WHERE open_id = ?
+  `);
+  const moveSessions = db.prepare(`UPDATE sessions SET open_id = ? WHERE open_id = ?`);
+  const moveHistory = db.prepare(`UPDATE link_history SET open_id = ? WHERE open_id = ?`);
+  const deleteLegacyUser = db.prepare(`DELETE FROM users WHERE open_id = ?`);
+  const fillNamespacedFeishuOpenId = db.prepare(
+    `UPDATE users SET feishu_open_id = ? WHERE open_id = ? AND COALESCE(feishu_open_id, '') = ''`
+  );
+
+  for (const row of legacyRows) {
+    const nextId = localUserId(row.tenant, row.open_id);
+    if (!stmtFindUserByOpenId.get(nextId)) {
+      insertNamespacedUser.run(nextId, row.open_id);
+    }
+    fillNamespacedFeishuOpenId.run(row.open_id, nextId);
+    moveSessions.run(nextId, row.open_id);
+    moveHistory.run(nextId, row.open_id);
+    deleteLegacyUser.run(row.open_id);
+  }
+
+  db.prepare(
+    `UPDATE users
+     SET feishu_open_id = open_id
+     WHERE COALESCE(feishu_open_id, '') = ''
+       AND open_id NOT LIKE 'fbif:%'
+       AND open_id NOT LIKE 'fude:%'`
+  ).run();
+  db.prepare(
+    `UPDATE users
+     SET feishu_open_id = substr(open_id, 6)
+     WHERE COALESCE(feishu_open_id, '') = ''
+       AND (open_id LIKE 'fbif:%' OR open_id LIKE 'fude:%')`
+  ).run();
+});
+migrateLegacyUserIds();
+
 // Prepared statements
 const stmtUpsertUser = db.prepare(`
-  INSERT INTO users (open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO users (open_id, feishu_open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(open_id) DO UPDATE SET
+    feishu_open_id=excluded.feishu_open_id,
     name=excluded.name,
     avatar_url=excluded.avatar_url,
     tenant=excluded.tenant,
@@ -82,7 +145,7 @@ const stmtCreateSession = db.prepare(
   `INSERT INTO sessions (token, open_id, expires_at) VALUES (?, ?, ?)`
 );
 const stmtGetSession = db.prepare(
-  `SELECT s.token, s.open_id, s.expires_at, u.name AS user_name, u.avatar_url, u.tenant, u.tenant_key
+  `SELECT s.token, s.open_id, s.expires_at, u.feishu_open_id, u.name AS user_name, u.avatar_url, u.tenant, u.tenant_key
    FROM sessions s JOIN users u ON s.open_id = u.open_id
    WHERE s.token = ? AND s.expires_at > datetime('now')`
 );
@@ -134,37 +197,40 @@ app.use(express.static(path.join(__dirname, "public"), { index: false }));
 
 // ===== Auth Helpers =====
 
-// session token 来源（按优先级）：cookie → X-Session-Token header → Authorization Bearer → query 兜底
+// session token 来源候选：cookie、X-Session-Token header、Authorization Bearer、query 兜底
 // 这是为了应对飞书内嵌 / 隐私浏览器 / 客户电脑 cookie 丢失的场景
-function extractSessionToken(req) {
-  const cookieToken = req.cookies?.[SESSION_COOKIE_NAME];
-  if (cookieToken) return cookieToken;
+function extractSessionTokens(req) {
+  const tokens = [];
+  const add = (value) => {
+    if (typeof value !== "string") return;
+    const token = value.trim();
+    if (token && !tokens.includes(token)) tokens.push(token);
+  };
 
-  const header = req.headers["x-session-token"];
-  if (typeof header === "string" && header) return header;
+  add(req.cookies?.[SESSION_COOKIE_NAME]);
+  add(req.headers["x-session-token"]);
 
   const auth = req.headers["authorization"];
   if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) {
-    return auth.slice(7).trim();
+    add(auth.slice(7));
   }
 
-  const q = req.query?.session_token;
-  if (typeof q === "string" && q) return q;
-
-  return "";
+  add(req.query?.session_token);
+  return tokens;
 }
 
 function resolveSession(req) {
-  const token = extractSessionToken(req);
-  if (!token) return null;
-  const row = stmtGetSession.get(token);
-  if (!row) return null;
-  // 30 天滑动续期：每次成功解析就把 expires_at 推到 now+30d
-  const newExpiry = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
-  try {
-    stmtTouchSession.run(newExpiry, token);
-  } catch {}
-  return { ...row, expires_at: newExpiry };
+  for (const token of extractSessionTokens(req)) {
+    const row = stmtGetSession.get(token);
+    if (!row) continue;
+    // 30 天滑动续期：每次成功解析就把 expires_at 推到 now+30d
+    const newExpiry = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
+    try {
+      stmtTouchSession.run(newExpiry, token);
+    } catch {}
+    return { ...row, expires_at: newExpiry };
+  }
+  return null;
 }
 
 function requireAuth(req, res, next) {
@@ -180,11 +246,14 @@ function requireAuth(req, res, next) {
 
 const feishuRouter = createFeishuRouter({
   onLogin: async (user, tenant) => {
+    const appTenant = tenant || "";
+    const localId = localUserId(appTenant, user.open_id);
     stmtUpsertUser.run(
+      localId,
       user.open_id,
       user.name || "",
       user.avatar_url || null,
-      tenant || "",
+      appTenant,
       user.tenant_key || "",
       user.union_id || "",
       user.user_id || "",
@@ -192,7 +261,7 @@ const feishuRouter = createFeishuRouter({
     );
     const sessionToken = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
-    stmtCreateSession.run(sessionToken, user.open_id, expiresAt);
+    stmtCreateSession.run(sessionToken, localId, expiresAt);
     return { sessionToken, expiresAt };
   },
   onLogout: (token) => {
@@ -210,12 +279,16 @@ app.use(feishuRouter);
 
 app.get("/api/me", (req, res) => {
   const session = resolveSession(req);
-  if (!session) return res.status(401).json({ ok: false });
+  if (!session) {
+    return req.query?.optional === "1"
+      ? res.json({ ok: false })
+      : res.status(401).json({ ok: false });
+  }
   res.json({
     ok: true,
     name: session.user_name,
     avatar_url: session.avatar_url,
-    open_id: session.open_id,
+    open_id: session.feishu_open_id || session.open_id,
     tenant: session.tenant,
     tenant_key: session.tenant_key,
   });
@@ -395,10 +468,12 @@ async function resolveRedirectChain(inputUrl, { timeoutMs = 12000, maxHops = 5 }
 }
 
 function sendError(res, status, message, detail) {
+  if (detail) {
+    console.warn("request failed:", detail);
+  }
   return res.status(status).json({
     code: -1,
     message,
-    ...(detail ? { detail } : {}),
   });
 }
 
@@ -782,7 +857,10 @@ app.listen(PORT, () => {
     (process.env.FEISHU_FBIF_APP_ID || "").trim() &&
       (process.env.FEISHU_FBIF_APP_SECRET || "").trim()
   );
-  const fudeReady = Boolean((process.env.FEISHU_FUDE_APP_SECRET || "").trim() || true); // 富的 有默认 fallback
+  const fudeReady = Boolean(
+    (process.env.FEISHU_FUDE_APP_ID || "").trim() &&
+      (process.env.FEISHU_FUDE_APP_SECRET || "").trim()
+  );
   console.log(
     `Feishu OAuth: FBIF=${fbifReady ? "ready" : "MISSING"} 富的=${fudeReady ? "ready" : "MISSING"}`
   );

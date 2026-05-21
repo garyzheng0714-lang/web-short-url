@@ -42,11 +42,35 @@ cp .env.example .env
 - `XIAOMARK_API_KEY`：你的小码 API Key（你发给我的那个值建议只放服务器，不进仓库）
 - `DEFAULT_WEBHOOK_CALLBACK_URL`：你希望前端“更多选项”默认显示的 webhook 推送地址
 - `PORT`：默认 `3000`
+- `FEISHU_FBIF_APP_ID` / `FEISHU_FBIF_APP_SECRET`：FBIF 飞书自建应用
+- `FEISHU_FUDE_APP_ID` / `FEISHU_FUDE_APP_SECRET`：富的飞书自建应用
+- `FEISHU_REDIRECT_BASE`：公网根地址，例如 `https://shorturl.garyzheng.com`
 
 说明：
 
 - 小码 Webhook 的“签名验证 token”是配置在小码后台 API 设置里的，这个项目当前不会接收 webhook，也不会用到 token。
 - 前端里的 “Webhook 推送地址（展示/记录用）” 字段不会提交到创建短链接口，只是便于你部署时核对配置。
+- 飞书 App Secret 只能放服务器环境变量或服务器 `.env`，不要写进前端代码，也不要提交到仓库。
+
+飞书后台要配置两个自建网页应用：
+
+| 租户 | 网页应用首页 URL |
+| --- | --- |
+| FBIF | `https://shorturl.garyzheng.com/login?tenant=fbif` |
+| 富的 | `https://shorturl.garyzheng.com/login?tenant=fude` |
+
+安全设置里的重定向 URL：
+
+| 应用 | 重定向 URL |
+| --- | --- |
+| FBIF | `https://shorturl.garyzheng.com/login` |
+| FBIF | `https://shorturl.garyzheng.com/auth/feishu/fbif/callback` |
+| FBIF | `https://shorturl.garyzheng.com/auth/feishu/fbif/qr-callback` |
+| 富的 | `https://shorturl.garyzheng.com/login` |
+| 富的 | `https://shorturl.garyzheng.com/auth/feishu/fude/callback` |
+| 富的 | `https://shorturl.garyzheng.com/auth/feishu/fude/qr-callback` |
+
+两个应用都要发布到对应企业，并把可用范围设为允许使用该工具的人。飞书客户端内打开首页 URL 会走免登；普通浏览器打开时仍可用按钮或扫码登录。
 
 ## 4. PM2 启动
 
@@ -121,4 +145,3 @@ pm2 restart web-short-url
 
 - 页面：`https://your-domain.com`
 - 健康检查：`https://your-domain.com/api/health`
-

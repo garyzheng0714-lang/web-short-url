@@ -399,6 +399,148 @@
     </main>
 
     <script>
+      // ===== -1. 飞书 webview 内自动免登（仅当 URL 带 ?tenant=fbif|fude 时启用） =====
+      // 飞书后台两个 App 的"网页应用首页 URL"分别配成：
+      //   FBIF App: https://shorturl.garyzheng.com/login?tenant=fbif
+      //   富的 App: https://shorturl.garyzheng.com/login?tenant=fude
+      // 员工在飞书工作台点应用图标 → 自动带参数进来 → 这段脚本跑免登。
+      // 不在飞书 webview 里 / 拿不到 SDK / 任何一步失败 → 自动回退到下方的按钮登录页，用户无感。
+      (async function trySsoLogin() {
+        const params = new URLSearchParams(window.location.search);
+        const tenant = params.get("tenant");
+        if (tenant !== "fbif" && tenant !== "fude") return;
+        let storedToken = "";
+        try {
+          storedToken = sessionStorage.getItem("shorturl_session_token") || "";
+        } catch {}
+        if (storedToken) return; // 让上面的 checkAlreadyLoggedIn 处理
+        if (!/feishu|lark/i.test(navigator.userAgent || "")) return;
+
+        // 立即遮罩，避免用户看到按钮抢着点
+        const mask = document.createElement("div");
+        mask.style.cssText =
+          "position:fixed;inset:0;background:#fff;display:grid;place-items:center;z-index:9999;" +
+          "font-family:inherit;color:#728196;font-size:14px";
+        mask.textContent = "正在通过飞书登录…";
+        document.body.appendChild(mask);
+        let stopped = false;
+        let readyTimer = null;
+        const abort = (reason) => {
+          if (stopped) return;
+          stopped = true;
+          if (readyTimer) clearTimeout(readyTimer);
+          console.warn("[sso] fallback:", reason);
+          mask.remove();
+        };
+
+        // 加载飞书 H5 SDK；普通浏览器不进入这段，避免外部打开时被遮罩卡住。
+        try {
+          await new Promise((resolve, reject) => {
+            if (window.h5sdk) return resolve();
+            const exist = document.querySelector('script[data-feishu-h5-sdk="1"]');
+            if (exist) return exist.addEventListener("load", resolve, { once: true });
+            const s = document.createElement("script");
+            s.src = "https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.44.js";
+            s.dataset.feishuH5Sdk = "1";
+            s.onload = resolve;
+            s.onerror = () => reject(new Error("sdk load failed"));
+            document.head.appendChild(s);
+          });
+        } catch (e) {
+          return abort("sdk_load_failed");
+        }
+        if (typeof window.h5sdk === "undefined") return abort("sdk_unavailable");
+
+        // 拿当前 tenant 的 appID
+        let appID;
+        try {
+          const r = await fetch(`/auth/feishu/${tenant}/sso-config`);
+          if (!r.ok) return abort("config_failed");
+          appID = (await r.json()).appID;
+          if (!appID) return abort("config_missing_app_id");
+        } catch (e) {
+          return abort("config_failed");
+        }
+
+        function requestAccessCode() {
+          return new Promise((resolve, reject) => {
+            window.tt.requestAccess({
+              appID,
+              scopeList: [], // 空数组 = 仅授获取用户凭证；够拿 open_id + tenant_key + name
+              success: (res) => {
+                if (res && res.code) resolve({ code: res.code, method: "requestAccess" });
+                else reject(new Error("no_code"));
+              },
+              fail: (err) => {
+                const error = new Error("requestAccess_failed");
+                error.errno = err && err.errno;
+                reject(error);
+              },
+            });
+          });
+        }
+
+        function requestAuthCode() {
+          return new Promise((resolve, reject) => {
+            window.tt.requestAuthCode({
+              appId: appID,
+              success: (res) => {
+                if (res && res.code) resolve({ code: res.code, method: "requestAuthCode" });
+                else reject(new Error("no_code"));
+              },
+              fail: () => reject(new Error("requestAuthCode_failed")),
+            });
+          });
+        }
+
+        async function requestFeishuCode() {
+          if (window.tt && typeof window.tt.requestAccess === "function") {
+            try {
+              return await requestAccessCode();
+            } catch (err) {
+              if (String(err.errno) !== "103" || typeof window.tt.requestAuthCode !== "function") {
+                throw err;
+              }
+            }
+          }
+          if (window.tt && typeof window.tt.requestAuthCode === "function") {
+            return requestAuthCode();
+          }
+          throw new Error("no_supported_auth_api");
+        }
+
+        async function exchangeCode(result) {
+          const r = await fetch(`/auth/feishu/${tenant}/sso-exchange`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(result),
+          });
+          if (!r.ok) throw new Error("exchange_failed");
+          const { sessionToken } = await r.json();
+          if (!sessionToken) throw new Error("no_session_token");
+          return sessionToken;
+        }
+
+        // 5 秒 SDK ready 超时兜底
+        readyTimer = setTimeout(() => abort("ready_timeout"), 5000);
+        window.h5sdk.ready(() => {
+          clearTimeout(readyTimer);
+          if (stopped) return;
+          (async () => {
+            try {
+              const sessionToken = await exchangeCode(await requestFeishuCode());
+              try {
+                sessionStorage.setItem("shorturl_session_token", sessionToken);
+              } catch {}
+              const next = new URLSearchParams(window.location.search).get("next") || "/";
+              window.location.replace(next);
+            } catch (e) {
+              abort(e.message || "auth_failed");
+            }
+          })();
+        });
+      })();
+
       // ===== 0. 已登录直接跳走（避免登录后重复看到登录页） =====
       (async function checkAlreadyLoggedIn() {
         try {
@@ -414,10 +556,13 @@
           }
           const stored = sessionStorage.getItem("shorturl_session_token");
           if (stored) headers["X-Session-Token"] = stored;
-          const res = await fetch("/api/me", { credentials: "include", headers });
+          const res = await fetch("/api/me?optional=1", { credentials: "include", headers });
           if (res.ok) {
-            const next = new URLSearchParams(window.location.search).get("next") || "/";
-            window.location.replace(next);
+            const data = await res.json();
+            if (data.ok) {
+              const next = new URLSearchParams(window.location.search).get("next") || "/";
+              window.location.replace(next);
+            }
           }
         } catch {
           // 网络错误就让用户手动点登录

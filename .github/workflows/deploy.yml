@@ -29,8 +29,8 @@ jobs:
               {
                 echo ''
                 echo '# === appended by deploy.yml on v2→v3 migration ==='
-                echo 'FEISHU_FUDE_APP_ID=cli_a975bf6e72b95bc9'
-                echo 'FEISHU_FUDE_APP_SECRET=MAXuPOlGRrvbO234gZyvObLbXBo5PKY4'
+                echo 'FEISHU_FUDE_APP_ID='
+                echo 'FEISHU_FUDE_APP_SECRET='
                 echo 'FEISHU_REDIRECT_BASE=https://shorturl.garyzheng.com'
               } >> .env
               echo "[deploy] .env migrated. Backup: .env.bak.*"
