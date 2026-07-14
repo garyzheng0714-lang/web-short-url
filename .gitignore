@@ -7,3 +7,4 @@ shorturl.db-shm
 shorturl.db-wal
 .playwright-mcp/
 screenshots/
+.claude/codex-state/
