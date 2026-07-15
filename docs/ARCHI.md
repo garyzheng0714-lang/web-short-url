@@ -60,7 +60,7 @@ Express 服务器（server.js）
 
 **上游依赖（外部服务）**
 - 小码短链 API：`https://api.xiaomark.com`（接口文档已导出到 `docs/xiaomark-api/`）
-- 飞书开放平台：`accounts.feishu.cn` / `open.feishu.cn` / `passport.feishu.cn`
+- 飞书开放平台：`accounts.feishu.cn`（OAuth 授权） / `open.feishu.cn`（token / user_info）
 
 **没有的东西**（重要，别去找）：没有测试框架、没有 lint、没有 typecheck、没有 git tag、没有 CHANGELOG。
 
@@ -72,13 +72,13 @@ Express 服务器（server.js）
 .
 ├── server.js                 # 873 行。Express 主文件：DB schema、session、代理、二维码、跳转解析、页面路由
 ├── lib/
-│   └── feishu_auth.js        # 478 行。飞书双租户 OAuth 路由工厂（13 条路由）
+│   └── feishu_auth.js        # 416 行。飞书单应用 OAuth 路由工厂（5 条路由）
 ├── public/                   # 前端静态资源（express.static 直出，index:false）
 │   ├── index.html            # 269 行。主应用页（建链 + 历史）
 │   ├── app.js                # 1605 行 ⚠️ 超 900 行规约。全部前端逻辑
 │   ├── styles.css            # 1607 行 ⚠️ 超 900 行规约。设计系统 + 全部样式
-│   ├── login.html            # 772 行。登录页（自带内联 CSS/JS：OAuth 按钮 + 扫码 + 端内免登）
-│   └── fbif-logo.webp        # 品牌 logo
+│   ├── login.html            # 399 行。Mascot 登录页（自带内联 CSS/JS：单按钮 OAuth + 端内免登）
+│   └── mascots/              # 登录页插画：door-login.webp（门+小黄人）+ fbif-logo.png
 ├── docs/
 │   ├── ARCHI.md              # 本文档
 │   ├── ARCHI-rules.md        # 何时回写本文档
@@ -138,10 +138,9 @@ Express 服务器（server.js）
 | `XIAOMARK_CACHE_TTL_MS` | 否 | `30000` | 元数据缓存时长（毫秒） |
 | `DEFAULT_WEBHOOK_CALLBACK_URL` | 否 | 空 | 前端"更多选项"展示用，**不会提交给小码** |
 | `DEFAULT_WEBHOOK_SCENE` | 否 | 空 | 同上 |
-| `FEISHU_FBIF_APP_ID` / `_SECRET` | **是** | — | FBIF 租户自建应用凭证 |
-| `FEISHU_FUDE_APP_ID` / `_SECRET` | **是** | — | 富的租户自建应用凭证 |
+| `FEISHU_FBIF_APP_ID` / `_SECRET` | **是** | — | 登录 App 凭证（单应用；富的走关联组织共享，无需独立凭证） |
 | `FEISHU_REDIRECT_BASE` | **是** | — | 部署根 URL（不带路径），OAuth 回调拼接用 |
-| `FEISHU_ALLOWED_TENANT_KEYS` | 否 | 空（=不限制） | 逗号分隔的飞书 `tenant_key` 白名单 |
+| `FEISHU_ALLOWED_TENANT_KEYS` | 否 | 空（=不限制） | 逗号分隔的飞书 `tenant_key` 白名单。⚠️ 要开必须同时填 FBIF 和富的两个 |
 
 **硬编码常量**（在 `server.js` 里，改要改代码）：
 - `SESSION_MAX_AGE_MS` = 30 天（滑动续期）
@@ -149,7 +148,7 @@ Express 服务器（server.js）
 - `XIAOMARK_API_BASE` = `https://api.xiaomark.com`
 - 上游超时：元数据 10～12 秒，建链 15 秒，跳转解析 10 秒 / 最多 6 跳
 
-**启动时的自检**：`server.js` 启动会打印 API key 是否加载、两个飞书租户是否就绪、`FEISHU_REDIRECT_BASE` 缺失则告警。
+**启动时的自检**：`server.js` 启动会打印 API key 是否加载、登录 App 是否就绪（`FBIF=ready`）、`FEISHU_REDIRECT_BASE` 缺失则告警。
 
 ---
 
@@ -183,7 +182,7 @@ REST-ish，但不严格。约定：
 | GET | `/login` | ❌ | 登录页 |
 | GET | `*` | ✅ | 兜底：已登录 → `index.html`；未登录 → 303 `/login?next=...` |
 
-飞书 OAuth 的 13 条路由见第 11 章。
+飞书 OAuth 的 5 条路由（单应用）见第 11 章。
 
 ### 输入校验（`/api/shortlinks/create`）
 
@@ -223,8 +222,8 @@ REST-ish，但不严格。约定：
 users (
   open_id     TEXT PRIMARY KEY,   -- 注意：这是本地 ID，格式 "fbif:ou_xxx"（租户前缀 + 飞书 open_id）
   feishu_open_id TEXT,            -- 飞书原始 open_id
-  name, avatar_url, tenant,       -- tenant = 'fbif' | 'fude'
-  tenant_key, union_id, user_id, email,
+  name, avatar_url, tenant,       -- tenant：v0.2.0 起新登录恒为 'fbif'（单应用路由标记，不再代表企业）
+  tenant_key, union_id, user_id, email,  -- tenant_key 才是真正区分企业的字段（老库 tenant 可能残留 'fude'/''）
   created_at, updated_at
 )
 
@@ -257,32 +256,39 @@ link_history (
 
 ---
 
-## 11. 认证与授权（飞书双租户）
+## 11. 认证与授权（飞书单应用统一登录）
 
-这是本项目最复杂的部分，全部在 `lib/feishu_auth.js`（478 行），通过 `createFeishuRouter({ onLogin, onLogout })` 注入回调，`server.js` 负责建用户和发 session。
+这是本项目最复杂的部分，全部在 `lib/feishu_auth.js`（416 行），通过 `createFeishuRouter({ onLogin, onLogout })` 注入回调，`server.js` 负责建用户和发 session。
 
-### 三条登录链路
+### 单应用模型（v0.2.0 起）
+
+**只有一个飞书 App（FBIF App），富的员工经飞书后台的「关联组织应用共享」走同一个 App 登录。** FBIF 和富的员工看到的是同一个登录页、点的是同一个按钮，系统靠 `user_info` 返回的 `tenant_key` 在后台区分身份（富的员工登录后 `tenant_key` 仍是富的自己的）。
+
+> 历史：v0.1.x 曾是「双 App 双按钮」——FBIF 和富的各一个独立 App，登录页两个按钮 + 扫码 Tab。v0.2.0 迁移到单应用，砍掉富的 App、扫码链路、租户选择。迁移的完整权衡与踩坑见 `docs/1-plans/F_0.2.0_feishu-single-app-mascot-login.plan.md`。
+
+### 两条登录链路
 
 | 链路 | 触发场景 | 飞书接口 | 说明 |
 |---|---|---|---|
 | **SSO 免登** | 在飞书客户端里打开页面 | `tt.requestAccess`（失败降级 `tt.requestAuthCode`）+ v2 token（**不带 redirect_uri**） | 主链路。用户零点击 |
-| **OAuth 按钮** | 普通浏览器点"使用飞书登录" | `accounts.feishu.cn/authorize` + v2 token（带 redirect_uri） | 降级链路 |
-| **扫码** | 桌面浏览器扫码 | `passport.feishu.cn/authorize` + **v1 token**（需先取 app_access_token） | 二次降级 |
+| **OAuth 按钮** | 普通浏览器点「使用飞书登录」 | `accounts.feishu.cn/authorize` + v2 token（带 redirect_uri） | 降级链路 |
 
-**每条链路 × 2 个租户（fbif / fude）= 12 条路由 + 1 条共享 logout = 13 条。**
+**路由：4 条在 `/auth/feishu/fbif/*`（`login` / `callback` / `sso-config` / `sso-exchange`）+ 1 条共享 `POST /auth/feishu/logout`（不带 fbif 段）= 5 条。**
 
-⚠️ **v1 vs v2 token 的坑**：扫码链路用的 `passport.feishu.cn` 只能配 v1 token 接口（要 app_access_token 打底）；另两条用 v2。这不是历史包袱，是飞书两套接口的现实约束——代码注释里写了。
+⚠️ **v1 token 函数仍保留**（`getAppAccessToken` / `exchangeCodeV1`）——SSO 免登的 `requestAuthCode` 降级路径在用它们（老版飞书客户端 `requestAccess` 返回 errno 103 时降级）。看着像"只有扫码用"，其实删了会让端内免登在老客户端上挂掉。
 
 ### state 防 CSRF：签名 + cookie 双保险
 
 标准做法是把 state 存 cookie 比对。但**飞书 webview 和某些客户机会丢 cookie**，纯 cookie 方案会导致合法用户登不进去。本项目的做法（`checkState`）：
 
-1. **state 本身是 HMAC 签名的**（`signState` / `verifyState`）——payload 含租户、模式、nonce、10 分钟过期，用两个 App Secret 派生的密钥签。签名过不了 → 拒绝。
+1. **state 本身是 HMAC 签名的**（`signState` / `verifyState`）——payload 含租户、模式、nonce、10 分钟过期，用 App Secret 派生的密钥签。签名过不了 → 拒绝。
 2. **cookie 是附加校验，不是必需**：有 cookie 但和 state 不一致 → 判定攻击，拒绝；**没有 cookie → 放行**（签名已经保护了身份）。
+
+⚠️ 签名密钥派生自 `FEISHU_FBIF_APP_SECRET`——换 secret 会让所有在途 state 失效（10 分钟窗口，重试即可）。
 
 ### 租户白名单
 
-`FEISHU_ALLOWED_TENANT_KEYS` 为空时**不限制**（任何飞书租户的用户都能登）。要收紧就填 `tenant_key`。
+`FEISHU_ALLOWED_TENANT_KEYS` 为空时**不限制**（任何飞书租户的用户都能登）。要收紧就填 `tenant_key`。⚠️ **单应用下 FBIF 和富的是两个不同 tenant_key，要开白名单必须两个都填**，只填一个会把另一家全部 403 拦掉。
 
 ---
 
@@ -338,8 +344,17 @@ link_history (
 
 | 页面 | 文件 | 特点 |
 |---|---|---|
-| 登录页 | `public/login.html`（772 行） | **完全自包含**：CSS 内联在 `<style>`，JS 内联在 `<script>`。不依赖 app.js / styles.css |
+| 登录页 | `public/login.html`（399 行） | **完全自包含**：CSS 内联在 `<style>`，JS 内联在 `<script>`。不依赖 app.js / styles.css |
 | 主应用 | `public/index.html` + `app.js` + `styles.css` | 建链表单 + 结果区 + 历史表格 |
+
+### 登录页 = Mascot 版（v6，v0.2.0 起）
+
+FBIF 品牌 Mascot 登录页：≥1024px 双栏卡片（左=门+小黄人插画 `mascots/door-login.webp`，右=表单），窄屏单栏（插画隐藏）。右栏是 FBIF logo + 副标题「短链工具」+ **一个**「使用飞书登录」胶囊按钮（飞书三色 inline SVG）+ 错误条。**没有第二个按钮、没有扫码、没有教程链接**——富的员工点同一个按钮登录。
+
+- 视觉源真相：`~/.claude/skills/feishu-login-guide/templates/frontend/react-vite/MascotLogin.tsx.template`（React/Tailwind）。本项目无 React，是**手工翻译成原生 HTML/CSS**，视觉值 1:1 对齐。
+- 两张位图在 `<head>` preload（插画带 `media="(min-width:1024px)"`），让图与 JS 并行下载。
+- ⚠️ **插画用绝对定位铺满**（`position:absolute; inset:0`）：grid 拉伸出的高度对 `height:100%` 不算"确定高度"，会让图塌成 0 高露出底色。这是翻译 Tailwind `size-full` 时的坑。
+- 保留两段关键 JS：`trySsoLogin()`（端内免登，租户锁 fbif）+ `checkAlreadyLoggedIn()`（消费 `#session_token` hash → sessionStorage → 清地址栏）。
 
 ### 为什么登录页是自包含的
 
@@ -572,7 +587,9 @@ pm2 save
 | 6 | DB 迁移无版本表 | 每次启动全量跑，靠 SQL 条件幂等；schema 再演进会越来越脆 | `server.js:53-127` |
 | 7 | 缓存 Map 无容量上限 | 当前 key 有界所以安全；改成多用户各自 key 就有内存风险 | `server.js:189` |
 | 8 | 无全局错误中间件 | 新路由忘了 try/catch 会泄漏栈 | `server.js` |
-| 9 | `FEISHU_ALLOWED_TENANT_KEYS` 默认不限制 | 任何飞书租户用户都能登进来 | `lib/feishu_auth.js:76` |
+| 9 | `FEISHU_ALLOWED_TENANT_KEYS` 默认不限制 | 任何飞书租户用户都能登进来 | `lib/feishu_auth.js` |
+| 10 | **单应用迁移（v0.2.0）后，富的登录从未真人验证** | 关联组织共享是否生效未知；富的现 0 用户 0 历史，即时影响为 0，但共享若没生效则富的登不进。验证顺延到富的实际要用时（见 F_0.2.0 计划门槛②） | `lib/feishu_auth.js` |
+| 11 | **富的迁移的 open_id 陷阱** | 飞书 open_id 是 App 维度的。将来若富的**已有用户**再从别的 App 迁到本 App，会拿到全新 open_id → 认不出老用户 → 历史丢。迁移前必须用 email/union_id 做身份映射，不能直接切 | `server.js`（`localUserId`） |
 
 ---
 

@@ -24,7 +24,7 @@
 - 解析跳转链路，便于排查最终落地页。
 - `/go?url=` 重定向代理。
 - 浏览器本地历史记录；登录后可使用 SQLite 保存服务端历史。
-- 飞书双租户登录：支持 FBIF 与富的两个自建应用，飞书客户端内可免登。
+- 飞书单应用统一登录：FBIF 与富的员工走同一个应用、同一个「使用飞书登录」按钮（富的经关联组织应用共享），飞书客户端内可免登。
 - 提供健康检查接口、PM2 配置和 Nginx 部署说明。
 
 ## 技术栈
@@ -82,36 +82,24 @@ http://localhost:3000
 | `DEFAULT_WEBHOOK_SCENE` | 前端高级字段的默认场景值 |
 | `XIAOMARK_CACHE_TTL_MS` | 小码元数据缓存时长，单位毫秒 |
 
-飞书登录需要两个租户各建一个自建网页应用，并把 App ID / App Secret 放到服务端环境变量：
+飞书登录只需一个自建网页应用（单应用），把 App ID / App Secret 放到服务端环境变量：
 
 | 变量 | 说明 |
 | --- | --- |
-| `FEISHU_FBIF_APP_ID` | FBIF 自建应用 App ID |
-| `FEISHU_FBIF_APP_SECRET` | FBIF 自建应用 App Secret |
-| `FEISHU_FUDE_APP_ID` | 富的自建应用 App ID |
-| `FEISHU_FUDE_APP_SECRET` | 富的自建应用 App Secret |
+| `FEISHU_FBIF_APP_ID` | 登录 App ID（富的员工也走它，无需独立应用） |
+| `FEISHU_FBIF_APP_SECRET` | 登录 App Secret |
 | `FEISHU_REDIRECT_BASE` | 部署根地址，例如 `https://shorturl.garyzheng.com` |
-| `FEISHU_ALLOWED_TENANT_KEYS` | 可选，逗号分隔的飞书 `tenant_key` 白名单 |
+| `FEISHU_ALLOWED_TENANT_KEYS` | 可选，逗号分隔的 `tenant_key` 白名单。⚠️ 要开必须同时填 FBIF 和富的两个 |
 
-飞书后台网页应用首页 URL：
+飞书后台配置（只需一个应用）：
 
-| 租户 | 首页 URL |
+| 项 | 值 |
 | --- | --- |
-| FBIF | `https://shorturl.garyzheng.com/login?tenant=fbif` |
-| 富的 | `https://shorturl.garyzheng.com/login?tenant=fude` |
+| 网页应用首页 URL | `https://shorturl.garyzheng.com/login?tenant=fbif` |
+| 安全设置 → 重定向 URL | `https://shorturl.garyzheng.com/auth/feishu/fbif/callback` |
+| 关联组织应用共享 | 在 admin.feishu.cn 把该 App 共享给「富的文化传媒（上海）有限公司」 |
 
-安全设置里的重定向 URL 按租户分别配置：
-
-| 应用 | 重定向 URL |
-| --- | --- |
-| FBIF | `https://shorturl.garyzheng.com/login` |
-| FBIF | `https://shorturl.garyzheng.com/auth/feishu/fbif/callback` |
-| FBIF | `https://shorturl.garyzheng.com/auth/feishu/fbif/qr-callback` |
-| 富的 | `https://shorturl.garyzheng.com/login` |
-| 富的 | `https://shorturl.garyzheng.com/auth/feishu/fude/callback` |
-| 富的 | `https://shorturl.garyzheng.com/auth/feishu/fude/qr-callback` |
-
-免登主链路是飞书客户端打开 `/login?tenant=...`，前端用飞书 H5 SDK 获取临时 code，后端用对应租户的 App Secret 换用户身份并创建本系统 session。普通浏览器或 SDK 不可用时，会退回到登录页按钮/扫码登录。
+免登主链路是飞书客户端打开 `/login?tenant=fbif`，前端用飞书 H5 SDK 获取临时 code，后端用 App Secret 换用户身份并创建本系统 session。普通浏览器或 SDK 不可用时，退回到登录页的「使用飞书登录」按钮走 OAuth。富的员工经关联组织共享，点同一个按钮即可登录，靠 `tenant_key` 区分身份。
 
 运行时 SQLite 数据保存在项目目录的 `shorturl.db`。
 
@@ -142,12 +130,11 @@ http://localhost:3000
 | --- | --- |
 | `GET /api/health` | 健康检查 |
 | `GET /api/config` | 返回前端配置与接口路径 |
-| `GET /auth/feishu/:tenant/login` | 发起飞书 OAuth 登录，`:tenant` 为 `fbif` 或 `fude` |
-| `GET /auth/feishu/:tenant/callback` | OAuth 登录回调 |
-| `GET /auth/feishu/:tenant/qr-config` | 获取扫码登录配置 |
-| `GET /auth/feishu/:tenant/qr-callback` | 扫码登录回调 |
-| `GET /auth/feishu/:tenant/sso-config` | 飞书客户端内免登配置 |
-| `POST /auth/feishu/:tenant/sso-exchange` | 飞书客户端内免登 code 交换 |
+| `GET /auth/feishu/fbif/login` | 发起飞书 OAuth 登录（单应用） |
+| `GET /auth/feishu/fbif/callback` | OAuth 登录回调 |
+| `GET /auth/feishu/fbif/sso-config` | 飞书客户端内免登配置（只返回 appID） |
+| `POST /auth/feishu/fbif/sso-exchange` | 飞书客户端内免登 code 交换 |
+| `POST /auth/feishu/logout` | 退出登录 |
 | `GET /api/me` | 检查登录状态 |
 | `GET /api/history` | 读取已登录用户历史记录 |
 | `POST /api/history/migrate` | 将浏览器历史迁移到服务端历史 |

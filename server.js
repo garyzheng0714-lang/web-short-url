@@ -857,12 +857,8 @@ app.listen(PORT, () => {
     (process.env.FEISHU_FBIF_APP_ID || "").trim() &&
       (process.env.FEISHU_FBIF_APP_SECRET || "").trim()
   );
-  const fudeReady = Boolean(
-    (process.env.FEISHU_FUDE_APP_ID || "").trim() &&
-      (process.env.FEISHU_FUDE_APP_SECRET || "").trim()
-  );
   console.log(
-    `Feishu OAuth: FBIF=${fbifReady ? "ready" : "MISSING"} 富的=${fudeReady ? "ready" : "MISSING"}`
+    `Feishu OAuth（单应用，富的走关联组织共享）: FBIF=${fbifReady ? "ready" : "MISSING"}`
   );
   if (!process.env.FEISHU_REDIRECT_BASE) {
     console.warn("⚠️  FEISHU_REDIRECT_BASE not set — OAuth callbacks will fail.");
