@@ -1,11 +1,21 @@
-# web-short-url
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="FBIF 短链：粘长链接生成短链与二维码，并可解析跳转链路查最终落地页">
+</p>
 
-![类型](https://img.shields.io/badge/%E7%B1%BB%E5%9E%8B-%E7%9F%AD%E9%93%BE%E5%B7%A5%E5%85%B7-f97316)
-![技术栈](https://img.shields.io/badge/%E6%8A%80%E6%9C%AF%E6%A0%88-Node.js%20%2B%20Express%20%2B%20SQLite-2563eb)
-![状态](https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E5%86%85%E9%83%A8%E5%B7%A5%E5%85%B7-16a34a)
-![README](https://img.shields.io/badge/README-%E4%B8%AD%E6%96%87-111827)
+<p align="center">
+  <img src="https://img.shields.io/badge/%E7%B1%BB%E5%9E%8B-%E7%9F%AD%E9%93%BE%E5%B7%A5%E5%85%B7-f97316?style=flat-square" alt="短链工具">
+  <img src="https://img.shields.io/badge/Node.js-Express-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js Express">
+  <img src="https://img.shields.io/badge/SQLite-better--sqlite3-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/%E7%99%BB%E5%BD%95-%E9%A3%9E%E4%B9%A6%E5%8D%95%E5%BA%94%E7%94%A8-2563eb?style=flat-square" alt="飞书单应用登录">
+</p>
 
-基于小码 API 的短链接创建网页工具，通过 Node.js/Express 服务端代理保护 API key，并提供二维码、跳转解析和历史记录能力。
+# web-short-url · FBIF 短链
+
+基于小码 API 的短链创建网页工具。粘一条长链接就能拿到短链和二维码，还能解析跳转链路排查最终落地页。
+
+**共享的小码 API key 只留在服务端，不下发前端**；用户也可以在表单里填自己的 key，这是两种不同模式，不要混谈。
+
+> 目录虽然位于 `归档/`，但 `codex/short-url-ui` 分支仍有生产部署。
 
 ## 仓库定位
 

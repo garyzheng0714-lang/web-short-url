@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">FBIF 短链</title>
+  <desc id="heroDesc">内部短链工具：粘一条长链接，拿到短链和二维码，并可解析跳转链路。小码 API key 留在服务端，不下发前端。图中是创建短链后的结果卡与二维码。</desc>
+
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="380" rx="26" fill="#0C0E12"/>
+
+  <!-- 左：标题区 -->
+  <g id="title-block" class="sans">
+    <rect x="64" y="76" width="6" height="22" rx="3" fill="#2563EB"/>
+    <text x="82" y="94" font-size="22" font-weight="600" fill="#6E9BF5" letter-spacing="1">内部短链工具 · 小码 API 代理</text>
+
+    <text x="64" y="166" font-size="52" font-weight="700" fill="#FFFFFF" letter-spacing="1">FBIF 短链</text>
+
+    <text x="64" y="216" font-size="24" fill="#94A0AE">粘一条长链接，拿到短链和二维码，</text>
+    <text x="64" y="252" font-size="24" fill="#94A0AE">还能解析跳转链路查最终落地页。</text>
+
+    <text x="64" y="316" font-size="18" class="mono" fill="#5A6472">Node.js · Express · SQLite · 飞书登录</text>
+  </g>
+
+  <!-- 右：工具卡 -->
+  <g id="tool-card" class="sans">
+    <rect x="600" y="56" width="536" height="284" rx="14" fill="#FFFFFF"/>
+
+    <!-- 输入 -->
+    <rect x="624" y="84" width="488" height="44" rx="8" fill="#F5F7FA" stroke="#E5E7EB" stroke-width="1"/>
+    <text x="642" y="112" font-size="16" class="mono" fill="#6E7784">https://www.foodtalks.cn/news/2026/…</text>
+
+    <!-- 按钮 -->
+    <rect x="624" y="140" width="488" height="44" rx="8" fill="#1F2329"/>
+    <text x="868" y="169" font-size="18" font-weight="600" fill="#FFFFFF" text-anchor="middle">缩短</text>
+
+    <!-- 短链结果 -->
+    <rect x="624" y="200" width="330" height="54" rx="8" fill="#EEF3FF"/>
+    <text x="644" y="234" font-size="20" class="mono" font-weight="600" fill="#2563EB">fbif.link/8kQ2m</text>
+    <rect x="904" y="216" width="20" height="22" rx="3" fill="none" stroke="#2563EB" stroke-width="1.8"/>
+    <rect x="898" y="210" width="20" height="22" rx="3" fill="#EEF3FF" stroke="#2563EB" stroke-width="1.8"/>
+
+    <!-- 跳转解析 -->
+    <text x="624" y="286" font-size="16" fill="#5A6472">跳转解析：2 跳 → 最终落地页 200</text>
+    <text x="624" y="314" font-size="15" fill="#98A0AE">历史记录可导出 · 登录后存服务端</text>
+
+    <!-- 二维码 -->
+    <rect x="980" y="200" width="132" height="132" rx="8" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="1"/>
+    <g fill="#1F2329">
+      <rect x="992" y="212" width="36" height="36"/>
+      <rect x="1064" y="212" width="36" height="36"/>
+      <rect x="992" y="284" width="36" height="36"/>
+    </g>
+    <g fill="#FFFFFF">
+      <rect x="1000" y="220" width="20" height="20"/>
+      <rect x="1072" y="220" width="20" height="20"/>
+      <rect x="1000" y="292" width="20" height="20"/>
+    </g>
+    <g fill="#1F2329">
+      <rect x="1006" y="226" width="8" height="8"/>
+      <rect x="1078" y="226" width="8" height="8"/>
+      <rect x="1006" y="298" width="8" height="8"/>
+      <rect x="1040" y="212" width="10" height="10"/>
+      <rect x="1040" y="236" width="10" height="10"/>
+      <rect x="992" y="260" width="10" height="10"/>
+      <rect x="1016" y="260" width="10" height="10"/>
+      <rect x="1052" y="260" width="10" height="10"/>
+      <rect x="1088" y="260" width="10" height="10"/>
+      <rect x="1040" y="284" width="10" height="10"/>
+      <rect x="1064" y="284" width="10" height="10"/>
+      <rect x="1088" y="296" width="10" height="10"/>
+      <rect x="1052" y="308" width="10" height="10"/>
+      <rect x="1076" y="308" width="10" height="10"/>
+    </g>
+  </g>
+</svg>
