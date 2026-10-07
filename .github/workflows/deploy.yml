@@ -17,7 +17,9 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
-            git pull origin main
+            # 2026-09-19 迁到 121.40.214.5：目录属主是迁移带来的未知 uid，服务器也没有 GitHub
+            # SSH 凭证。公开仓库直接走 HTTPS 拉取，只允许快进。
+            git -c safe.directory="$PWD" pull --ff-only https://github.com/garyzheng0714-lang/web-short-url.git main
 
             # ---- one-shot, idempotent .env migration: v2 → v3 (dual-tenant) ----
             if [ -f .env ] && ! grep -q '^FEISHU_FBIF_APP_ID=' .env; then
@@ -38,7 +40,9 @@ jobs:
               echo "[deploy] .env already on v3 schema, skipping migration"
             fi
 
-            npm ci --production
+            npm ci --omit=dev
             pm2 restart web-short-url
             sleep 2
-            curl -sf http://127.0.0.1:3000/api/health || (echo "Health check failed!" && exit 1)
+            # 新服务器 3000 被别的服务占用，端口以 .env 为准（当前 3010）。
+            PORT=$(grep -E '^PORT=' .env | tail -1 | cut -d= -f2)
+            curl -sf "http://127.0.0.1:${PORT:-3000}/api/health" || (echo "Health check failed!" && exit 1)
