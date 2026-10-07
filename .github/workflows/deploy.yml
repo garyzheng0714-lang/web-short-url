@@ -2,7 +2,7 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [codex/short-url-ui]
+    branches: [main]
 
 jobs:
   deploy:
@@ -17,7 +17,7 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
-            git pull origin codex/short-url-ui
+            git pull origin main
 
             # ---- one-shot, idempotent .env migration: v2 → v3 (dual-tenant) ----
             if [ -f .env ] && ! grep -q '^FEISHU_FBIF_APP_ID=' .env; then
