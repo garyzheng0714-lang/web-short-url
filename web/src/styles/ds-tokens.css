@@ -121,10 +121,12 @@
   --base-fill-hover-mix: 4%;
   --base-shadow-secondary: inset 0 0 0 1px #e3e1e0; /* 实色内边线，不改变控件几何 */
   /* 动作与状态 */
-  /* 主题色只给链接、焦点环、未读点和选择控件；主动作与当前项使用中性墨（DESIGN.md §9.3）。 */
-  --base-primary: #1378fe;
+  /* 强调色 = Notion 蓝（用户 2026-10-08：「强调色应该是 Notion 蓝，而不是黑」）：主按钮、开关、选中日期、焦点环、链接、选择控件都用它；
+   * 当前项（导航、标签）仍是同色加深的中性底。白字在 #2383e2 上约 3.9:1，照参考值（Notion 原样），不为 4.5 改色。 */
+  --base-primary: #2383e2;
   --base-accent-text: color-mix(in oklab, var(--base-primary) 84%, black); /* 强调色压暗一档（默认 ≈ #1066d9，对选中底 ≥ 4.5:1）；跟着 --base-primary 走，项目换强调色时文字色自动跟上 */
   --base-primary-fg: #ffffff;
+  /* 实墨面上的字（warning-fg 用）；主按钮已改用强调色，见下方 --ds-action */
   --base-action-fg: #ffffff;
   --base-action-hover: #262626;
   /*
@@ -246,8 +248,9 @@
   --base-elevation-hi: #ffffff;
   /* 每升一层往 fg 走 7%：第 5 层（对话框）#bdbdbd、第 8 层 #cdcdcd，各层选中底上都 ≥ 4.5 */
   --base-muted-lift: 7%;
-  --base-primary: #3b8dff;
-  --base-accent-text: var(--base-primary);
+  --base-primary: #2383e2;
+  /* 深色里蓝字要提亮才读得清（对 #121212 ≈ 7:1）；跟着 --base-primary 走 */
+  --base-accent-text: color-mix(in oklab, var(--base-primary) 70%, white);
   --base-action-fg: #121212;
   --base-action-hover: #d9d9d9;
   --base-warning: var(--base-fg);
@@ -374,10 +377,10 @@
   --ds-primary: var(--base-primary);
   --ds-primary-fg: var(--base-primary-fg);
   --ds-primary-hover: color-mix(in srgb, var(--base-primary) 84%, var(--base-canvas));
-  /* 默认按钮：浅色近黑、深色近白；当前项在所在底面同色加深。 */
-  --ds-action: var(--base-fg);
-  --ds-action-fg: var(--base-action-fg);
-  --ds-action-hover: var(--base-action-hover);
+  /* 主按钮与「开着」的控件：强调色实底 + 白字，悬停压暗一档（Notion #2383e2 → #0077d4 那一档）；深浅同值。当前项在所在底面同色加深。 */
+  --ds-action: var(--base-primary);
+  --ds-action-fg: var(--base-primary-fg);
+  --ds-action-hover: color-mix(in oklab, var(--base-primary) 86%, black);
   --ds-accent: var(--base-primary);
   --ds-accent-text: var(--base-accent-text);
   --ds-focus: var(--base-primary);

@@ -14,13 +14,12 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { QrDialog } from "@/components/qr-dialog";
 import { LinkDrawer } from "@/components/link-drawer";
 import { GroupDrawer } from "@/components/group-drawer";
-import { EditLinkDrawer, LinkRowMenu } from "@/components/link-actions";
+import { EditLinkDrawer, LinkRowMenu, LinkStatus, SuspendDialog } from "@/components/link-actions";
 import { useBootstrap } from "@/app/bootstrap";
 import { api, type GroupItem, type LinkItem, type ListLinksResult } from "@/lib/api";
-import { STATUS_LABEL, fmtDateShort, formatCount, shortUrlDisplay } from "@/lib/format";
+import { fmtDateShort, formatCount, shortUrlDisplay } from "@/lib/format";
 
 const PAGE_SIZE = 20;
-const STATUS_TAG: Record<string, "neutral" | "warning" | "danger"> = { suspended: "warning", banned: "danger", missing: "neutral" };
 
 function pageWindow(current: number, pages: number) {
   return [...new Set([1, pages, current, current - 1, current + 1])].filter((p) => p >= 1 && p <= pages).sort((a, b) => a - b);
@@ -42,7 +41,7 @@ function VisitsPill({ value }: { value: number }) {
 }
 
 /** 一条短链（Dub 链接列表的排法）：图标 · 短链 + 复制 / 目标链接 · 近 7 天 · 分组 · 创建日期 · 访问次数 · ⋯ */
-function LinkRow({ link, trend, onOpen, onChanged, onQr, onEdit }: { link: LinkItem; trend?: number[]; onOpen: (l: LinkItem) => void; onChanged: (l: LinkItem) => void; onQr: (url: string) => void; onEdit: (l: LinkItem) => void }) {
+function LinkRow({ link, trend, onOpen, onChanged, onQr, onEdit, onSuspend }: { link: LinkItem; trend?: number[]; onOpen: (l: LinkItem) => void; onChanged: (l: LinkItem) => void; onQr: (url: string) => void; onEdit: (l: LinkItem) => void; onSuspend: (l: LinkItem) => void }) {
   const short = shortUrlDisplay(link.link_url);
   const target = `${link.name && !/^短链/.test(link.name) ? `${link.name} · ` : ""}${shortUrlDisplay(link.target_url)}`;
   return (
@@ -58,11 +57,6 @@ function LinkRow({ link, trend, onOpen, onChanged, onQr, onEdit }: { link: LinkI
             {link.key || short}
           </span>
           <CopyButton value={link.link_url} label="复制短链" iconOnly size="icon-sm" className="relative z-10 shrink-0" />
-          {link.status !== "active" ? (
-            <Tag variant={STATUS_TAG[link.status]} className="shrink-0">
-              {STATUS_LABEL[link.status]}
-            </Tag>
-          ) : null}
         </div>
         <div className="flex min-w-0 items-center gap-1 text-xs text-fg-muted">
           <CornerDownRight aria-hidden className="size-3.5 shrink-0" />
@@ -76,11 +70,14 @@ function LinkRow({ link, trend, onOpen, onChanged, onQr, onEdit }: { link: LinkI
       </span>
       <span className="hidden w-36 shrink-0 truncate text-xs text-fg-muted @4xl/data:block">{link.group_name || "未分组"}</span>
       <span className="hidden w-12 shrink-0 text-right text-xs text-fg-muted tabular-nums @xl/data:block">{fmtDateShort(link.created_at)}</span>
+      <span data-part="status" className="hidden w-16 shrink-0 @md/data:block">
+        <LinkStatus status={link.status} />
+      </span>
       <span data-part="visits" className="flex w-20 shrink-0 justify-end">
         <VisitsPill value={link.stats.visit_count} />
       </span>
       <span className="relative z-10 shrink-0">
-        <LinkRowMenu link={link} onChanged={onChanged} onQr={onQr} onEdit={onEdit} onOpen={onOpen} />
+        <LinkRowMenu link={link} onChanged={onChanged} onQr={onQr} onEdit={onEdit} onOpen={onOpen} onSuspend={onSuspend} />
       </span>
     </li>
   );
@@ -131,6 +128,7 @@ export function DataPage() {
   const [groups, setGroups] = useState<GroupItem[] | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [editing, setEditing] = useState<LinkItem | null>(null);
+  const [suspending, setSuspending] = useState<LinkItem | null>(null);
 
   const update = useCallback(
     (patch: Record<string, string | null>, keepPage = false) => {
@@ -251,7 +249,7 @@ export function DataPage() {
           items.length ? (
             <ul aria-label="短链" className={LIST}>
               {items.map((l) => (
-                <LinkRow key={l.id} link={l} trend={trends[l.id]} onOpen={openLink} onChanged={replaceLink} onQr={setQrUrl} onEdit={setEditing} />
+                <LinkRow key={l.id} link={l} trend={trends[l.id]} onOpen={openLink} onChanged={replaceLink} onQr={setQrUrl} onEdit={setEditing} onSuspend={setSuspending} />
               ))}
             </ul>
           ) : state === "loading" ? (
@@ -316,6 +314,7 @@ export function DataPage() {
 
       <QrDialog url={qrUrl} onClose={() => setQrUrl(null)} />
       <EditLinkDrawer link={editing} onClose={() => setEditing(null)} onSaved={replaceLink} />
+      <SuspendDialog link={suspending} onClose={() => setSuspending(null)} onChanged={replaceLink} />
       <LinkDrawer id={openLinkId} initial={openLinkId ? items.find((l) => l.id === openLinkId) || null : null} onClose={() => update({ link: null }, true)} onChanged={replaceLink} />
       <GroupDrawer id={openGroupId} onClose={() => update({ g: null }, true)} onShowLinks={(id) => update({ g: null, view: null, group: id })} />
     </div>

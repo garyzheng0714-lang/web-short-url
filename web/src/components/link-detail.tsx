@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { Ellipsis, ExternalLink, Pause, Pencil, Play, QrCode, Route, UserRoundPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
-import { Tag } from "@/components/ui/tag";
 import { Avatar } from "@/components/ui/avatar";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,12 +13,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { StatsPanel } from "@/components/stats-panel";
 import { QrPopover } from "@/components/qr-dialog";
 import { BotSwitch, RangeSegmented, rangeLabel, type RangeKey } from "@/components/range-control";
-import { EditLinkForm, claimLink, toggleSuspend } from "@/components/link-actions";
+import { EditLinkForm, LinkStatus, SuspendConfirm, claimLink } from "@/components/link-actions";
 import { useBootstrap } from "@/app/bootstrap";
 import { api, type LinkItem, type LinkStats, type VisitRecord } from "@/lib/api";
-import { BROWSER_LABEL, DEVICE_LABEL, OS_LABEL, STATUS_LABEL, fmtDateTime, formatNumber, hostOf, labelOf, relativeTime, shortUrlDisplay } from "@/lib/format";
+import { BROWSER_LABEL, DEVICE_LABEL, OS_LABEL, fmtDateTime, formatNumber, hostOf, labelOf, relativeTime, shortUrlDisplay } from "@/lib/format";
 
-const STATUS_TAG: Record<string, "neutral" | "success" | "warning" | "danger"> = { active: "success", suspended: "warning", banned: "danger", missing: "neutral" };
 const VISITS_PAGE = 20;
 
 /**
@@ -42,6 +40,7 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
   const [visits, setVisits] = useState<{ items: VisitRecord[]; total: number; page: number } | null>(null);
   const [visitsPage, setVisitsPage] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [route, setRoute] = useState<{ open: boolean; loading: boolean; steps: { url: string; status: number }[]; final: string; error: string }>({ open: false, loading: false, steps: [], final: "", error: "" });
 
   const setLink = useCallback(
@@ -120,7 +119,19 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
 
   return (
     <div className="@container/detail grid gap-8">
-      {editing ? (
+      {confirming ? (
+        <section aria-label={link.status === "suspended" ? "恢复跳转" : "暂停跳转"} className="grid gap-4">
+          <h3 className="text-sm font-medium">{link.status === "suspended" ? "恢复跳转" : "暂停跳转"}</h3>
+          <SuspendConfirm
+            link={link}
+            onCancel={() => setConfirming(false)}
+            onDone={(next) => {
+              setLink(next);
+              setConfirming(false);
+            }}
+          />
+        </section>
+      ) : editing ? (
         <section aria-label="编辑短链" className="grid gap-6">
           <h3 className="text-sm font-medium">编辑</h3>
           <EditLinkForm
@@ -165,9 +176,9 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
                     编辑
                   </DropdownMenuItem>
                   {link.status === "banned" ? null : (
-                    <DropdownMenuItem onSelect={() => void toggleSuspend(link, setLink)}>
+                    <DropdownMenuItem onSelect={() => setConfirming(true)}>
                       {link.status === "suspended" ? <Play aria-hidden /> : <Pause aria-hidden />}
-                      {link.status === "suspended" ? "恢复跳转" : "暂停跳转"}
+                      {link.status === "suspended" ? "恢复跳转…" : "暂停跳转…"}
                     </DropdownMenuItem>
                   )}
                 </>
@@ -186,14 +197,10 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
         </div>
 
         <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-          {link.status !== "active" ? (
-            <>
-              <dt className="text-fg-muted">状态</dt>
-              <dd>
-                <Tag variant={STATUS_TAG[link.status]}>{STATUS_LABEL[link.status]}</Tag>
-              </dd>
-            </>
-          ) : null}
+          <dt className="text-fg-muted">状态</dt>
+          <dd>
+            <LinkStatus status={link.status} />
+          </dd>
           {link.name && !/^短链/.test(link.name) ? (
             <>
               <dt className="text-fg-muted">名称</dt>

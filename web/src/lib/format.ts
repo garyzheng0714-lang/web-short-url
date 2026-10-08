@@ -70,5 +70,7 @@ export const BROWSER_LABEL: Record<string, string> = { wechat: "微信", qq: "QQ
 export const OS_LABEL: Record<string, string> = { ios: "iOS", android: "Android", windows: "Windows", macos: "macOS", linux: "Linux", other: "其他" };
 export const DEVICE_LABEL: Record<string, string> = { mobile: "手机", pc: "电脑", other: "其他" };
 export const NETWORK_LABEL: Record<string, string> = { mobile: "移动网络", broadband: "宽带" };
-export const STATUS_LABEL: Record<string, string> = { active: "可用", suspended: "已暂停", banned: "已封禁", missing: "已删除" };
+export const STATUS_LABEL: Record<string, string> = { active: "正常", suspended: "已暂停", banned: "已封禁", missing: "已删除" };
+/** 状态的颜色（Tag 圆点）：正常绿；暂停、删除灰；封禁红（异常） */
+export const STATUS_TONE: Record<string, "success" | "neutral" | "danger"> = { active: "success", suspended: "neutral", banned: "danger", missing: "neutral" };
 export const labelOf = (map: Record<string, string>, key: string | null | undefined) => (key ? map[key] || key : "未知");

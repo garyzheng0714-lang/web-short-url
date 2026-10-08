@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
+import { List } from "lucide-react";
 import { toast } from "sonner";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -53,41 +54,60 @@ function GroupDetail({ id, onShowLinks }: { id: string; onShowLinks: () => void 
 
   const period = rangeLabel(range);
   const loading = state === "loading" && !stats;
+  const total = stats?.totals.created_link_count ?? meta?.link_count ?? 0;
   return (
     <div className="@container/detail grid gap-8">
-      <div className="flex flex-wrap items-center gap-2">
-        {boot.user.is_admin ? (
-          <Select value={meta?.owner_open_id || NONE} onValueChange={(v) => void assign(v)}>
-            <SelectTrigger aria-label="归属人" className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>无归属</SelectItem>
-              {users.map((u) => (
-                <SelectItem key={u.open_id} value={u.open_id}>
-                  {u.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <span className="text-sm text-fg-muted">{meta?.owner_name ? `归属 ${meta.owner_name}` : "无归属"}</span>
-        )}
-        <Button variant="secondary" className="ml-auto" onClick={onShowLinks}>
-          查看组内短链
-        </Button>
+      {/* 排法同短链抽屉：动作在前，属性是标签 · 值的小表，「访问数据」一节自带时间范围与含机器访问 */}
+      <div className="grid gap-6">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={onShowLinks}>
+            <List aria-hidden />
+            查看组内短链
+          </Button>
+        </div>
+        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2 text-sm">
+          <dt className="text-fg-muted">归属人</dt>
+          <dd className="min-w-0">
+            {boot.user.is_admin ? (
+              <Select value={meta?.owner_open_id || NONE} onValueChange={(v) => void assign(v)}>
+                <SelectTrigger variant="inline" aria-label="归属人" className="edge-start">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>无归属</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.open_id} value={u.open_id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className={meta?.owner_name ? "" : "text-fg-muted"}>{meta?.owner_name || "无"}</span>
+            )}
+          </dd>
+          <dt className="text-fg-muted">短链</dt>
+          <dd className="tabular-nums">
+            {formatNumber(total)} 条{stats ? <span className="text-fg-muted"> · {formatNumber(stats.totals.visited_link_count)} 条被访问过</span> : null}
+          </dd>
+        </dl>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <RangeSegmented group={`${uid}-range`} value={range} onChange={setRange} />
-        <BotSwitch includeBots={includeBots} onChange={setIncludeBots} />
-      </div>
-      <div role="group" aria-label="指标" className="grid grid-cols-2 gap-6 @2xl/detail:grid-cols-4">
-        <MetricCard label={`${period}访问`} value={stats?.period.visit_count ?? 0} loading={loading} context={period} />
-        <MetricCard label={`${period}访客`} value={stats?.period.visitor_count ?? 0} loading={loading} context={`IP ${formatNumber(stats?.period.ip_count ?? 0)}`} />
-        <MetricCard label="累计访问" value={stats?.totals.visit_count ?? 0} loading={loading} context={`访客 ${formatNumber(stats?.totals.visitor_count ?? 0)}`} />
-        <MetricCard label="被访问短链" value={stats?.totals.visited_link_count ?? 0} loading={loading} context={`共 ${formatNumber(stats?.totals.created_link_count ?? meta?.link_count ?? 0)} 条`} />
-      </div>
-      <StatsPanel daily={stats?.daily || []} chart={stats?.chart || null} period={period} loading={loading} error={state === "error" ? error : undefined} onRetry={() => void load()} />
+
+      <section aria-labelledby={`${uid}-data`} className="grid gap-6">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h3 id={`${uid}-data`} className="mr-auto text-sm font-medium">
+            访问数据
+          </h3>
+          <BotSwitch includeBots={includeBots} onChange={setIncludeBots} />
+          <RangeSegmented group={`${uid}-range`} value={range} onChange={setRange} />
+        </div>
+        <div role="group" aria-label="指标" className="grid grid-cols-3 gap-6">
+          <MetricCard label="访问" value={stats?.period.visit_count ?? 0} loading={loading} context={`IP ${formatNumber(stats?.period.ip_count ?? 0)}`} />
+          <MetricCard label="访客" value={stats?.period.visitor_count ?? 0} loading={loading} />
+          <MetricCard label="累计访问" value={stats?.totals.visit_count ?? 0} loading={loading} context={`访客 ${formatNumber(stats?.totals.visitor_count ?? 0)}`} />
+        </div>
+        <StatsPanel daily={stats?.daily || []} chart={stats?.chart || null} period={period} loading={loading} error={state === "error" ? error : undefined} onRetry={() => void load()} />
+      </section>
     </div>
   );
 }
