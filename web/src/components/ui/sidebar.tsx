@@ -16,8 +16,11 @@ import { Tooltip } from "@/components/ui/tooltip"
 /**
  * 侧栏（DESIGN.md K3、K4、§3.9）：宽 256（工具栏 400），左右内边距 8，组间 12。
  * - 折叠钮永远在第一栏的右上角（用户 2026-10-08：「永远都在第一栏的右上角」），由侧栏自己画，使用方放不错：
- *   展开时指向侧栏或键盘聚焦才淡入（L2），收起后侧栏留一条 56 宽的窄栏，折叠钮常驻在窄栏顶部。
+ *   展开时指向侧栏或键盘聚焦才淡入（L2），收起后折叠钮常驻在窄栏顶部。
  *   正文里的 SidebarTrigger 只在窄屏出现，用来打开抽屉。
+ * - 收起 = 图标栏（用户 2026-10-08 看到空窄栏：「莫名奇妙」；先例 Copilot、Mintlify、Plain 收起都留一列导航图标）：
+ *   窄栏宽 = 行高 + 16（52 · 紧凑 44），导航项缩成行高见方的图标钮、原位不动，指向出名字（右侧提示）；
+ *   站名、组名、目录子项、导航以外的内容收起时隐去。面板不平移，只把右边裁到窄栏宽，图标从头到尾不动。
  * - 不做悬停浮出（用户 2026-10-08：「我鼠标移动到侧边栏为什么会自动弹出，这是什么垃圾」）：收起就是收起，只有点折叠钮或按 [ 才展开。
  * - 展开时右边线外侧有把手（ui/sidebar-rail）：拖动调宽 160–360，往外拖过最小宽 56 预演收起，拖回取消，松手才算数；不动直接点 = 收起。
  * - 快捷键 [（不带修饰键，⌘[ 留给浏览器后退；在输入框里打字、输入法组字时不触发）。页面上有几个侧栏时，焦点在哪个侧栏里就由它响应，
@@ -214,7 +217,7 @@ function SidebarProvider({
         ref={wrapper}
         data-slot="sidebar-wrapper"
         data-responsive={responsive}
-        className={cn("flex min-h-svh w-full bg-canvas text-fg [--ds-sidebar-top:0px] [--ds-sidebar-rail:56px]", container && "relative", SIDEBAR_WIDTH[width], className)}
+        className={cn("flex min-h-svh w-full bg-canvas text-fg [--ds-sidebar-top:0px] [--ds-sidebar-rail:calc(var(--ds-h-row)+16px)]", container && "relative", SIDEBAR_WIDTH[width], className)}
         style={dragWidth === null ? style : ({ ...style, "--ds-sidebar-w": `${dragWidth}px` } as React.CSSProperties)}
       >
         {children}
@@ -236,22 +239,23 @@ function noSideScroll(el: HTMLElement) {
  * 外框分区（DESIGN.md §3.9）：整个应用的侧栏是一个区，指针在它上面只滚它，到头、内容不够长也不传给页面。
  * 嵌在页面一块里的外框（responsive="container"）属于正文，照 §5 滚到头交给页面，所以不加。
  */
-function PanelScroll({ opacity, inert, children }: { opacity: MotionValue<number>; inert: boolean; children: React.ReactNode }) {
+function PanelScroll({ children }: { children: React.ReactNode }) {
   const { frame, hasHeader } = useSidebar()
   const node = React.useRef<HTMLDivElement>(null)
   useGeometryInvariant("Sidebar", node, noSideScroll)
   return (
-    <motion.div
+    <div
       ref={node}
       data-slot="sidebar-scroll"
-      inert={inert}
-      style={{ opacity }}
       className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", !frame && "overscroll-y-contain", !hasHeader && "pt-(--ds-header-h)")}
     >
       {children}
-    </motion.div>
+    </div>
   )
 }
+
+/** 桌面侧栏收起成图标栏时为 true：导航项据此缩成图标钮（正文里的导航项不受影响） */
+const SidebarCollapsedContext = React.createContext(false)
 
 /** 进度 p（0–1）推到 to：transition 由调用方按起因选；null = 直接到位。onRest 只在自然停稳时调用 */
 function drive(p: MotionValue<number>, to: number, transition: Transition | null, onRest?: () => void) {
@@ -284,11 +288,12 @@ function DesktopSidebar({ className, label, rail, children }: { className?: stri
   const { open, resizing, frame, instant, animateLayout } = s
   const reduce = useReducedMotion()
   const aside = React.useRef<HTMLElement>(null)
-  // 一个进度 p：占位列从窄栏 56 到整宽、面板从「只露右边 56」到全露、内容从透明到不透明，同一个数推着走
+  // 一个进度 p：占位列从窄栏到整宽、面板右边从裁到窄栏到全露、折叠钮跟着裁边，同一个数推着走
   const p = useMotionValue(open ? 1 : 0)
   const columnWidth = useTransform(p, (v) => `calc(var(--ds-sidebar-rail) + (var(--ds-sidebar-w) - var(--ds-sidebar-rail)) * ${v})`)
-  const transform = useTransform(p, (v) => `translateX(calc((var(--ds-sidebar-rail) - var(--ds-sidebar-w)) * ${1 - v}))`)
-  const contentOpacity = useTransform(p, [0, 0.5, 1], [0, 0.4, 1])
+  // 全开时不裁：右边线外侧的拖动把手要露出来
+  const clipPath = useTransform(p, (v) => (v >= 1 ? "none" : `inset(0 calc((var(--ds-sidebar-w) - var(--ds-sidebar-rail)) * ${1 - v}) 0 0)`))
+  const toggleShift = useTransform(p, (v) => `translateX(calc((var(--ds-sidebar-rail) - var(--ds-sidebar-w)) * ${1 - v}))`)
 
   const first = React.useRef(true)
   const prev = React.useRef(open)
@@ -320,12 +325,20 @@ function DesktopSidebar({ className, label, rail, children }: { className?: stri
         aria-label={label}
         data-slot="sidebar"
         data-state={open ? "expanded" : "collapsed"}
-        style={{ transform }}
-        className={cn(panelClass, frame ? "absolute z-40" : "fixed z-40", "top-(--ds-sidebar-top) bottom-0 left-0 bg-sidebar", className)}
+        style={{ clipPath }}
+        className={cn(
+          panelClass,
+          frame ? "absolute z-40" : "fixed z-40",
+          "top-(--ds-sidebar-top) bottom-0 left-0 bg-sidebar",
+          // 图标栏：整行宽的滑动当前底、跟随悬停底收起时藏起来，由图标钮自己画
+          "data-[state=collapsed]:[&_[data-slot=nav-menu]>[data-slot=nav-current]]:invisible data-[state=collapsed]:[&_[data-slot=fluid-hover-highlight]]:invisible",
+          className
+        )}
       >
-        {/* 拖动途中预演收起时内容还握着指针，不能 inert */}
-        <PanelScroll opacity={contentOpacity} inert={!open && !resizing}>{children}</PanelScroll>
-        <PanelToggle />
+        <SidebarCollapsedContext.Provider value={!open}>
+          <PanelScroll>{children}</PanelScroll>
+        </SidebarCollapsedContext.Provider>
+        <PanelToggle shift={toggleShift} />
         {/* 拖动途中预演收起时把手还握着指针：收起了也留着，松手才卸 */}
         {rail && (open || resizing) ? (
           <SidebarRail
@@ -344,15 +357,16 @@ function DesktopSidebar({ className, label, rail, children }: { className?: stri
 }
 
 /**
- * 侧栏自己的折叠钮：钉在面板右上角，盒子宽 = 窄栏宽（56），按钮在里面居中，所以收起后正好落在窄栏正中、展开时离右边线 10。
- * 展开时是附属工具（L2）：指向侧栏、键盘聚焦时 80ms 淡入，离开 60ms 淡出；收起后它是窄栏里唯一的东西，常驻。触屏常驻。
+ * 侧栏自己的折叠钮：钉在面板右上角，盒子宽 = 窄栏宽，按钮在里面居中，所以收起后正好落在窄栏正中（和图标钮同一条竖中线）、展开时离右边线 8。
+ * 展开时是附属工具（L2）：指向侧栏、键盘聚焦时 80ms 淡入，离开 60ms 淡出；收起后常驻在窄栏顶部。触屏常驻。
  */
-function PanelToggle() {
+function PanelToggle({ shift }: { shift: MotionValue<string> }) {
   const { open, toggle, shortcut } = useSidebar()
   const name = open ? "收起侧栏" : "展开侧栏"
   return (
-    <div
+    <motion.div
       data-slot="sidebar-toggle"
+      style={{ transform: shift }}
       className={cn(
         "absolute top-0 right-0 flex h-(--ds-header-h) w-(--ds-sidebar-rail) items-center justify-center",
         open && "opacity-0 transition-opacity duration-(--ds-dur-fast-exit) ease-ds group-hover/sidebar:opacity-100 group-hover/sidebar:duration-(--ds-dur-fast) focus-within:opacity-100 focus-within:duration-(--ds-dur-fast) [@media(hover:none)]:opacity-100"
@@ -363,9 +377,13 @@ function PanelToggle() {
           {open ? <PanelLeft /> : <PanelRight />}
         </Button>
       </Tooltip>
-    </div>
+    </motion.div>
   )
 }
+
+/** 收起成图标栏时隐去（站名、组名、导航以外的内容）：收起 60ms 淡出，展开 80ms 淡入 */
+const hideWhenCollapsed =
+  "transition-[opacity,visibility] duration-(--ds-dur-fast) ease-ds group-data-[state=collapsed]/sidebar:invisible group-data-[state=collapsed]/sidebar:opacity-0 group-data-[state=collapsed]/sidebar:duration-(--ds-dur-fast-exit)"
 
 /**
  * 头、内容、脚三段共用一列的起止线（DESIGN.md §3.2）：行盒子在 8–(宽 − 16)，墨迹在 16–(宽 − 24)。
@@ -378,16 +396,20 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
     return () => setHasHeader(false)
   }, [setHasHeader])
   // 桌面：右上角是折叠钮的格（窄栏宽 56），头里的字、图标钮停在它左边
-  return <div data-slot="sidebar-header" className={cn("flex h-(--ds-header-h) shrink-0 items-center gap-2 ps-4", desktop ? "pe-(--ds-sidebar-rail)" : "pe-6", className)} {...props} />
+  return <div data-slot="sidebar-header" className={cn("flex h-(--ds-header-h) shrink-0 items-center gap-2 ps-4", desktop ? cn("pe-(--ds-sidebar-rail)", hideWhenCollapsed) : "pe-6", className)} {...props} />
 }
+
+/** 收起成图标栏时，里面没有导航项的直接子项隐去（搜索框、卡片这类会被裁成半截） */
+const keepNavWhenCollapsed =
+  "group-data-[state=collapsed]/sidebar:[&>:not([data-slot=nav-item]):not(:has([data-slot=nav-item]))]:invisible"
 
 /** 滚动区：组间 12 留白 */
 function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="sidebar-content" className={cn("scroll-safe grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pl-2 pt-2 pb-6", className)} {...props} />
+  return <div data-slot="sidebar-content" className={cn("scroll-safe grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pl-2 pt-2 pb-6", keepNavWhenCollapsed, className)} {...props} />
 }
 
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="sidebar-footer" className={cn("grid shrink-0 gap-px ps-2 pe-4 pb-2", className)} {...props} />
+  return <div data-slot="sidebar-footer" className={cn("grid shrink-0 gap-px ps-2 pe-4 pb-2", keepNavWhenCollapsed, className)} {...props} />
 }
 
 /** 正文区：侧栏右侧的一切 */
@@ -414,6 +436,7 @@ function SidebarTrigger({ className, ...props }: React.ComponentProps<typeof But
 export {
   readSidebarCookie,
   Sidebar,
+  SidebarCollapsedContext,
   SidebarContent,
   SidebarContext,
   SidebarFooter,

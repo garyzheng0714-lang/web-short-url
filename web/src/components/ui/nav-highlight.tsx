@@ -8,6 +8,7 @@ import { FluidHoverHighlight, useFluidHover, type ItemRect } from "@/components/
 /**
  * 一组导航项的两块底（DESIGN.md K2、K6、§4.3「当前」）：导航、分页、标签栏、落地页胶囊共用。
  * - 悬停：整组只有一块跟随悬停底（ui/fluid-hover），指针在空隙、内边距、末项之后也落在最近一项；键盘焦点（:focus-visible）移到哪项，底跟到哪项。
+ *   指向当前项时只画当前底，避免 fast 与 moderate 两块底在换页途中错位叠影。
  * - 当前：一块在项之间滑动的底（moderate 0.16s，临界阻尼不过冲）；同一项只是因为别处折叠、换行而挪了位置时直接到位，不追着它滑。
  *   第一次量好之前，当前项自己画一块静态底（NavHighlightItem 的 staticCurrent），首帧就有当前项、不闪。
  * - 项按 DOM 顺序登记，看不见的（display: none，例如容器查询藏起来的页码）不登记，容器尺寸变了重排一次。
@@ -49,7 +50,7 @@ function useNavHighlight<T extends HTMLElement>(containerRef: React.RefObject<T 
   const frame = React.useRef<number | null>(null)
   const { registerItem, setActiveIndex } = hover
 
-  // 登记与当前项都合并到下一帧排一次：排序要读可见性（布局），不在 ref 回调里同步读（DESIGN.md「首次布局」）
+  // 登记合并到下一帧排一次：排序要读可见性（布局），不在 ref 回调里同步读（DESIGN.md「首次布局」）
   const sync = React.useCallback(() => {
     if (frame.current !== null) return
     frame.current = requestAnimationFrame(() => {
@@ -90,6 +91,8 @@ function useNavHighlight<T extends HTMLElement>(containerRef: React.RefObject<T 
     (element: HTMLElement, on: boolean) => {
       if (currents.current.get(element) === on) return
       currents.current.set(element, on)
+      // 当前状态本帧回传，不等排序帧：aria-current 已经换行时不能仍把新行当成独立悬停项。
+      if (on) setCurrentEl(element)
       sync()
     },
     [sync]
@@ -147,7 +150,7 @@ function useNavHighlight<T extends HTMLElement>(containerRef: React.RefObject<T 
           />
         ) : null}
       </AnimatePresence>
-      <FluidHoverHighlight hover={hover} from={index >= 0 ? index : null} className={radius} />
+      {hover.activeIndex !== index ? <FluidHoverHighlight hover={hover} from={index >= 0 ? index : null} className={radius} /> : null}
     </>
   )
 

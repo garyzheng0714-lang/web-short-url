@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 
 /**
@@ -73,7 +75,7 @@ export function contentWidth(el: HTMLElement) {
 
 /**
  * 一排并排的同类项结构相同（DESIGN.md 红线 9）：同一排的指标卡要么都带趋势线、要么都不带。
- * 2026-10-08 短链首页：三格指标只有第一格带折线，另两格下面空着；它没用 MetricGroup，所以按 DOM 找同排：
+ * 2026-10-08 用户截图的短链首页（旧版，已改）：三格指标只有第一格带折线，另两格下面空着；它没用 MetricGroup，所以按 DOM 找同排：
  * 往上至多两层，找到第一个有 ≥ 2 个子项各含一张指标卡的容器，比较每项里有没有 [data-slot=metric-sparkline]。
  */
 export function sameShapeRow(el: HTMLElement) {

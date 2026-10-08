@@ -20,6 +20,7 @@ import { Tooltip } from "@/components/ui/tooltip"
  * 这里要单元格选择、编辑、上万行虚拟滚动、列固定——行是绝对定位的 div（role="grid"），交互模型完全不同。纯函数在 data-grid-model，改值（撤销、清空、填充、复制粘贴）在 data-grid-edits，行与底栏在 data-grid-parts。
  * - 虚拟滚动：只渲染看得见的行 ± 6（加上活动格那一行），行 36 高、表头 44 吸顶、行号与 pinned 列吸左；只在表格自己里面滚。
  * - 选择：点一格、Shift 点 / 拖出范围；活动格 2px 墨色内框、白底，选区 selected 底（不用彩色底）；没碰过表格前都不画。底栏写地址（B3:D7）、计数、数字列求和。
+ *   拖选时移动没按着键就结束（在表格外松手，抬起送不到表格；2026-10-08 修：之前松手后鼠标移回表格，活动格跟着鼠标走）。
  * - 编辑：Enter / F2 / 双击 / 直接打字开始；Enter 提交下移、Tab 提交右移、Esc 放弃；数字列解析不了标红不提交；选项列只收选项里的值。
  *   输入法组字中的 Enter 不提交。中文直接打字请先按 Enter 或双击进入编辑（表格本身不是输入框）。
  * - 键盘：方向键、Shift 扩选、⌘/Ctrl + 方向到边、Home / End、PageUp / PageDown、Tab；Delete 清空；⌘/Ctrl + C / V（TSV，与表格软件互通）、
@@ -321,6 +322,7 @@ function DataGrid({ columns, rows: rowsProp, onRowsChange, label, maxHeight = 48
         }}
         onPointerMove={(e) => {
           if (!dragging.current) return
+          if (e.buttons === 0) return void (dragging.current = false)
           const c = cellAt(e.clientX, e.clientY)
           if (c && (c.row !== active.row || c.col !== active.col)) setActive(c)
         }}

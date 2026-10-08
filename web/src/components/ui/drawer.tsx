@@ -1,5 +1,3 @@
-"use client"
-
 import { nextFrame } from "@/components/ui/frame"
 
 import * as React from "react"
@@ -40,6 +38,8 @@ import { rubberband } from "@/components/ui/stretch"
  *   松手时速度超过 0.4px/ms 或拖过自身 25% 就关：带着手势速度用 SPRINGS.moderate 退出去（手势的动量不断，所以这里用弹簧不用短过渡）；
  *   否则带着速度用 SPRINGS.moderate 弹回原位。进出途中也能一把抓住。
  *   输入框、文字选区、自己处理拖动的控件（touch-action: none，如开关、滑块）不触发拖拽；底部抽屉内容在滚动时让给滚动。
+ *   只认 DOM 上真在面板里的指针事件：Portal 浮层（菜单、Select、Popover）沿 React 树冒上来的按下、移动、抬起都不算；
+ *   移动时没按着键（抬起没送到面板，比如按下就开了模态菜单）= 已经松手，按松手处理（2026-10-08：点开 ⋯ 往菜单项斜着移，抽屉跟着鼠标往外缩 72px）。
  * - 卸载兜底：关闭后 exitFallbackMs(EXIT.moderate)（220ms）一定卸载，不等动画回调（后台标签页停住 rAF 时遮罩和滚动锁不会留下）。
  * - 键盘打开 / Esc 关闭 → 0ms。
  * - 减少动态 → 组件自己读 useReducedMotion()：不位移，面板和遮罩淡入 fast / 淡出 EXIT.fast；拖拽照常跟手，松手弹回直接到位。
@@ -72,7 +72,7 @@ function Drawer({ open, defaultOpen, onOpenChange, ...props }: React.ComponentPr
   )
 }
 
-type DrawerContentProps = React.ComponentProps<typeof DialogPrimitive.Content> & {
+type DrawerContentProps = Omit<React.ComponentProps<typeof DialogPrimitive.Content>, "title"> & {
   side?: keyof typeof SIDE
   title: React.ReactNode
   description?: React.ReactNode
@@ -101,6 +101,9 @@ function canDrag(target: EventTarget, root: HTMLElement, axis: "x" | "y") {
   return true
 }
 
+/** 事件是不是真发生在面板的 DOM 里：Portal 里的浮层在 React 树里仍是面板的子孙，它的指针事件会冒泡到面板的处理函数上 */
+const inPanel = (e: React.PointerEvent<HTMLElement>) => e.currentTarget.contains(e.target as Node)
+
 function DrawerPanel({ className, side = "right", title, description, children, onPointerDown, onOpenAutoFocus, ...props }: DrawerContentProps) {
   const { setOpen } = usePopup()
   const [present, safeToRemove] = usePresence()
@@ -123,6 +126,7 @@ function DrawerPanel({ className, side = "right", title, description, children, 
   const alive = React.useRef(present)
   alive.current = present
   const drag = React.useRef<{ x: number; y: number; from: number; live: boolean; trail: [number, number][] } | null>(null)
+  const pendingClose = React.useRef<(() => void) | undefined>(undefined)
   const dragged = React.useRef(false)
   const [scrollable, setScrollable] = React.useState(false)
   const density = useDensityProps()
@@ -210,6 +214,7 @@ function DrawerPanel({ className, side = "right", title, description, children, 
 
   React.useEffect(
     () => () => {
+      pendingClose.current?.()
       running.current.forEach((a) => a.stop())
       observer.current?.disconnect()
     },
@@ -218,6 +223,8 @@ function DrawerPanel({ className, side = "right", title, description, children, 
 
   const press = (e: React.PointerEvent<HTMLDivElement>) => {
     onPointerDown?.(e)
+    if (!inPanel(e)) return
+    pendingClose.current?.()
     dragged.current = false
     if (e.button !== 0 || !e.isPrimary || !present || !canDrag(e.target, e.currentTarget, axis)) return
     drag.current = { x: e.clientX, y: e.clientY, from: off.get(), live: false, trail: [] }
@@ -225,6 +232,9 @@ function DrawerPanel({ className, side = "right", title, description, children, 
   const move = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current
     if (!d) return
+    // 没按着键：抬起没送到面板（按下时开了模态菜单，外面全是 pointer-events: none），这次拖拽已经结束
+    if (e.buttons === 0) return release(e)
+    if (!inPanel(e)) return
     const along = (axis === "x" ? e.clientX - d.x : e.clientY - d.y) * sign // 正 = 朝关闭方向
     const across = axis === "x" ? e.clientY - d.y : e.clientX - d.x
     if (!d.live) {
@@ -259,14 +269,19 @@ function DrawerPanel({ className, side = "right", title, description, children, 
     const [t1, v1] = d.trail.at(-1) ?? [0, 0]
     const idle = e.timeStamp - t1 > 60
     const v = idle || t1 === t0 ? 0 : (v1 - v0) / (t1 - t0)
+    const rebound = () => {
+      fling.current = null
+      if (reduce) { run(); off.set(0) }
+      else run(animate(off, 0, { ...SPRINGS.moderate, velocity: v * 1000 }))
+    }
     if (v > FLICK || (v > -FLICK && off.get() > size.current * CLOSE_AT)) {
       fling.current = v * 1000
       setOpen(false)
-    } else if (reduce) {
-      run()
-      off.set(0)
-    } else run(animate(off, 0, { ...SPRINGS.moderate, velocity: v * 1000 }))
+      // 受控调用方可以拒绝关闭；等提交后仍在场，就带着松手速度回原位。
+      pendingClose.current = nextFrame(() => { if (alive.current) rebound() })
+    } else rebound()
   }
+  const up = (e: React.PointerEvent<HTMLDivElement>) => inPanel(e) && release(e)
 
   return (
     <DialogPrimitive.Portal forceMount>
@@ -306,8 +321,8 @@ function DrawerPanel({ className, side = "right", title, description, children, 
           style={{ [axis]: pos, opacity: fade, ...(present ? null : EXITING) }}
           onPointerDown={press}
           onPointerMove={move}
-          onPointerUp={release}
-          onPointerCancel={release}
+          onPointerUp={up}
+          onPointerCancel={up}
           // 拖过的这一下不算点击（按下的地方可能是按钮）
           onClickCapture={(e) => {
             if (!dragged.current) return

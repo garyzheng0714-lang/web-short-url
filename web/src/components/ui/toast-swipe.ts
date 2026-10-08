@@ -1,10 +1,3 @@
-"use client"
-
-/**
- * Toast 手势：跟手、速度与甩出。通知生命周期留在 toaster.tsx（DESIGN.md §5）。
- * 动效（DESIGN.md §4.2）：拖动 1:1 跟手；甩出去带着松手速度走 SPRINGS.moderate（动量不断），同时 EXIT.moderate（0.12s）淡出；
- * 不够远、不够快就带着速度 SPRINGS.moderate 回到原位。减少动态时直接到位，只留淡出。
- */
 import * as React from "react"
 import { animate, type MotionValue } from "motion/react"
 import { toast as sonner, type ToastT } from "sonner"
@@ -12,6 +5,8 @@ import { EXIT, SPRINGS } from "@/components/ui/ease"
 import { rubberband } from "@/components/ui/stretch"
 const SWIPE_DISTANCE = 45
 const SWIPE_VELOCITY = 0.11
+/** 事件是不是真发生在这个元素的 DOM 里：Portal 里的浮层在 React 树里仍是它的子孙，指针事件会冒泡上来 */
+const inside = (e: React.PointerEvent) => (e.currentTarget as Element).contains(e.target as Node)
 
 type SwipeOptions = { toast: ToastT; swipeX: MotionValue<number>; swipeY: MotionValue<number>; opacity: MotionValue<number>; natural: number; reduce: boolean | null; onFly: (fade: Promise<unknown>) => void }
 function useSwipe({ toast: t, swipeX, swipeY, opacity, natural, reduce, onFly }: SwipeOptions) {
@@ -24,7 +19,7 @@ function useSwipe({ toast: t, swipeX, swipeY, opacity, natural, reduce, onFly }:
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     pointer.current = e.pointerType
     dragged.current = false
-    if (e.button !== 0 || locked || (e.target as Element).closest("button, a, input, textarea")) return
+    if (e.button !== 0 || locked || !inside(e) || (e.target as Element).closest("button, a, input, textarea")) return
     e.currentTarget.setPointerCapture(e.pointerId)
     swipeX.stop()
     swipeY.stop()
@@ -32,7 +27,9 @@ function useSwipe({ toast: t, swipeX, swipeY, opacity, natural, reduce, onFly }:
   }
   const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     const d = drag.current
-    if (!d || (window.getSelection()?.toString().length ?? 0) > 0) return
+    if (!d) return
+    if (e.buttons === 0) return onPointerUp()
+    if (!inside(e) || (window.getSelection()?.toString().length ?? 0) > 0) return
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
     if (!d.axis) {
@@ -71,7 +68,8 @@ function useSwipe({ toast: t, swipeX, swipeY, opacity, natural, reduce, onFly }:
     else animate(mv, 0, { ...SPRINGS.moderate, velocity })
   }
   const consumeClick = () => [dragged.current, (dragged.current = false)][0]
-  return { active, consumeClick, pointer: () => pointer.current, handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp } }
+  const onPointerEnd = (e: React.PointerEvent<HTMLElement>) => inside(e) && onPointerUp()
+  return { active, consumeClick, pointer: () => pointer.current, handlers: { onPointerDown, onPointerMove, onPointerUp: onPointerEnd, onPointerCancel: onPointerEnd } }
 }
 
 export { useSwipe }

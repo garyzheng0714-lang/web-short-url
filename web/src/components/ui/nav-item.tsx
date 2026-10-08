@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { Slot } from "radix-ui"
 import { ChevronRight } from "lucide-react"
@@ -5,7 +7,8 @@ import { ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useGeometryInvariant } from "@/components/ui/invariant"
 import { NavHighlightContext, WeightLabel, composeRefs, useNavHighlight, useNavHighlightItem } from "@/components/ui/nav-highlight"
-import { SidebarContext } from "@/components/ui/sidebar"
+import { SidebarCollapsedContext, SidebarContext } from "@/components/ui/sidebar"
+import { Tooltip } from "@/components/ui/tooltip"
 
 /**
  * 导航项（DESIGN.md K2、K6、§4.3）：行高 --ds-h-row（36 · 紧凑 28，触屏至少 44），左右 --ds-pad-row（8 · 6），
@@ -18,6 +21,7 @@ import { SidebarContext } from "@/components/ui/sidebar"
  * 不在任何 NavMenu / NavSection 里的单独一项：自己画 :hover 底与静态当前底。
  * asChild：渲染为路由链接等元素，如 <NavItem asChild><Link to="/">首页</Link></NavItem>；链接里的字照样变 600。
  * 窄屏侧栏是抽屉：点了导航项抽屉自动关。
+ * 桌面侧栏收起成图标栏时：缩成行高见方的图标钮（图标原位不动），字只留给读屏，指向在右侧出名字；当前与悬停由钮自己画。
  */
 function NavItem({
   className,
@@ -39,16 +43,17 @@ function NavItem({
   asChild?: boolean
 }) {
   const sidebar = React.useContext(SidebarContext)
+  const collapsed = React.useContext(SidebarCollapsedContext)
   const item = useNavHighlightItem(active, ref)
   const Comp = asChild ? Slot.Root : "button"
-  const ownCurrent = item.staticCurrent || (!item.scoped && active)
+  const ownCurrent = item.staticCurrent || ((!item.scoped || collapsed) && active)
   // asChild：字在子元素（Link）里面，把它的内容包进 WeightLabel，字重才能随当前项变、不挤动
   const label =
     asChild && React.isValidElement<{ children?: React.ReactNode }>(children)
       ? React.cloneElement(children, undefined, <WeightLabel className="flex-1">{children.props.children}</WeightLabel>)
       : <WeightLabel className="flex-1">{children}</WeightLabel>
 
-  return (
+  const button = (
     <Comp
       ref={item.ref}
       data-slot="nav-item"
@@ -66,7 +71,9 @@ function NavItem({
         "[&_svg]:size-(--ds-icon) [&_svg]:shrink-0 [&_svg]:text-fg-muted [&_svg]:transition-[color,stroke-width] [&_svg]:duration-(--ds-dur-fast) [&_svg]:ease-ds",
         "hover:[&_svg]:text-fg hover:[&_svg.lucide]:stroke-2 data-[fluid-hover]:[&_svg]:text-fg data-[fluid-hover]:[&_svg.lucide]:stroke-2",
         "aria-[current=page]:[&_svg]:text-fg aria-[current=page]:[&_svg.lucide]:stroke-2",
-        !item.scoped && "not-aria-[current=page]:hover:bg-hover",
+        (!item.scoped || collapsed) && "not-aria-[current=page]:hover:bg-hover",
+        // 图标栏：行高见方、图标居中；字、数量、行尾只留给读屏
+        collapsed && "w-(--ds-h-row) justify-center px-0 [&>[data-slot=weight-label]]:sr-only [&>[data-slot=nav-count]]:hidden [&>[data-slot=nav-trailing]]:hidden",
         className
       )}
       {...props}
@@ -74,10 +81,20 @@ function NavItem({
       {ownCurrent ? <span aria-hidden data-slot="nav-current" className="absolute inset-0 -z-10 rounded-inherit bg-nav-current" /> : null}
       {icon}
       {asChild ? <Slot.Slottable>{label}</Slot.Slottable> : label}
-      {count ? <span className="ml-auto text-xs font-normal text-fg-muted tabular-nums">{count}</span> : null}
-      {trailing}
+      {count ? <span data-slot="nav-count" className="ml-auto text-xs font-normal text-fg-muted tabular-nums">{count}</span> : null}
+      {trailing ? <span data-slot="nav-trailing" className="flex shrink-0 items-center">{trailing}</span> : null}
     </Comp>
   )
+  // 在侧栏里的项一直包着提示（只在图标栏时放开），开合时元素树不变、焦点不丢
+  const name = sidebar ? textOf(asChild && React.isValidElement<{ children?: React.ReactNode }>(children) ? children.props.children : children) : ""
+  return name ? <Tooltip content={name} side="right" open={collapsed ? undefined : false}>{button}</Tooltip> : button
+}
+
+/** 导航项的名字（图标栏的提示用）：只取纯文字 */
+function textOf(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join("")
+  return ""
 }
 
 /**
@@ -114,9 +131,10 @@ function NavSection({
 }) {
   const parent = React.useContext(NavHighlightContext)
   return (
-    <div role="group" aria-label={typeof label === "string" ? label : undefined} className={cn("grid gap-(--ds-gap-row)", className)}>
+    <div role="group" data-slot="nav-section" aria-label={typeof label === "string" ? label : undefined} className={cn("grid gap-(--ds-gap-row)", className)}>
       {label ? (
-        <div className="flex h-(--ds-h-row) items-center justify-between px-(--ds-pad-row) text-xs font-medium text-fg-muted">
+        // 图标栏里组名隐去，留着高度当组与组之间的空隙
+        <div className="flex h-(--ds-h-row) items-center justify-between px-(--ds-pad-row) text-xs font-medium text-fg-muted group-data-[state=collapsed]/sidebar:invisible">
           <span className="truncate">{label}</span>
           {action}
         </div>
@@ -148,6 +166,8 @@ function childUnderParent(folder: HTMLElement) {
   const parent = folder.firstElementChild
   const child = folder.lastElementChild?.querySelector("[data-slot=nav-item]")
   if (!parent || !child || parent.getAttribute("aria-expanded") !== "true") return null
+  // 图标栏里子项不显示、字只留给读屏，不量
+  if (!child.getClientRects().length || folder.closest("[data-slot=sidebar][data-state=collapsed]")) return null
   const parentText = (() => {
     const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT)
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -165,7 +185,7 @@ function childUnderParent(folder: HTMLElement) {
 
 /**
  * 可展开目录：整行操作；子行和父行在同一个悬停范围里，子行的字对齐父行的字（缩进 = 图标 + 图标到字），字重同为 500。
- * 收起当前分支时父行代表当前位置（当前底从子行滑回父行）。箭头常驻：带图标（一级分组）在行尾，不带图标（二级目录）在行首代替图标；
+ * 收起当前分支时（以及侧栏收成图标栏时）父行代表当前位置（当前底从子行滑回父行）。箭头常驻：带图标（一级分组）在行尾，不带图标（二级目录）在行首代替图标；
  * 展开转 90°（fast 0.08s，减少动态时直接到位）。子行展开、收起直接到位，不做高度动画（上方组收起时由使用方同一帧补滚动）。
  * count：目录里有几项（数据，不是说明），排在箭头前面。
  */
@@ -192,13 +212,15 @@ function NavFolder({
     <ChevronRight aria-hidden className={cn("transition-[rotate,color,stroke-width] duration-(--ds-dur-fast) ease-ds motion-reduce:transition-none", open && "rotate-90")} />
   )
   const node = React.useRef<HTMLDivElement>(null)
+  // 图标栏里子项不显示：当前页在目录里时由父项代表当前位置
+  const collapsed = React.useContext(SidebarCollapsedContext)
   useGeometryInvariant("NavFolder", node, childUnderParent)
   return (
     <div ref={node} data-slot="nav-folder" className="grid gap-(--ds-gap-row)">
       <NavItem
         // 一级分组：图标平时次级灰，组展开时和文字一样深
         className={icon && open ? "[&>svg]:text-fg" : undefined}
-        active={containsCurrent && !open}
+        active={containsCurrent && (!open || collapsed)}
         aria-expanded={open}
         aria-controls={id}
         onClick={() => onOpenChange(!open)}
@@ -212,7 +234,8 @@ function NavFolder({
         id={id}
         role="group"
         aria-label={label}
-        className={cn("grid gap-(--ds-gap-row) pl-[calc(var(--ds-icon)+var(--ds-gap-control))]", !open && "hidden")}
+        // 图标栏里不露子项（它们缩进在父项的字下面，会被裁掉一半）
+        className={cn("grid gap-(--ds-gap-row) pl-[calc(var(--ds-icon)+var(--ds-gap-control))] group-data-[state=collapsed]/sidebar:hidden", !open && "hidden")}
       >
         {open ? children : null}
       </div>
