@@ -2,6 +2,10 @@ import { formatNumber } from "@/components/ui/chart-scale";
 
 export { formatNumber };
 
+/** 卡片上的计数：一律完整数字加千分位（formatNumber 过 10 万会换成「万」，同一屏混着读很乱） */
+const grouped = new Intl.NumberFormat("zh-CN");
+export const formatCount = (n: number) => grouped.format(n);
+
 const zhDate = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
 const zhDateTime = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const zhMonthDay = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "numeric", day: "numeric" });

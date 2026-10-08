@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Navigate, RouterProvider, useParams } from "react-router-dom";
 import { MotionConfig } from "motion/react";
@@ -8,25 +8,18 @@ import "@fontsource/geist-mono/latin-500.css";
 import "./styles.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
-import { Spinner } from "@/components/ui/spinner";
 import { consumeSessionTokenFromHash } from "./lib/session";
 import { AppShell } from "./app/shell";
-import { HomePage } from "./pages/home";
+import { CreatePage } from "./pages/create";
+import { DataPage } from "./pages/data";
+import { SettingsPage } from "./pages/settings";
 
-const SettingsPage = lazy(() => import("./pages/settings").then((m) => ({ default: m.SettingsPage })));
-const Loading = () => (
-  <div className="grid h-64 place-items-center">
-    <Spinner delay={400} label="正在加载页面" />
-  </div>
-);
-const page = (el: React.ReactNode) => <Suspense fallback={<Loading />}>{el}</Suspense>;
-
-// 旧地址统一收进首页：详情、分组都是首页上的抽屉
+// 旧地址：详情、分组都在「短链访问数据」页的抽屉里（页面都不懒加载，切换不闪加载态）
 function LinkRedirect() {
-  return <Navigate replace to={`/?link=${encodeURIComponent(useParams().id || "")}`} />;
+  return <Navigate replace to={`/data?link=${encodeURIComponent(useParams().id || "")}`} />;
 }
 function GroupRedirect() {
-  return <Navigate replace to={`/?view=groups&g=${encodeURIComponent(useParams().id || "")}`} />;
+  return <Navigate replace to={`/data?view=groups&g=${encodeURIComponent(useParams().id || "")}`} />;
 }
 
 consumeSessionTokenFromHash();
@@ -36,12 +29,13 @@ const router = createBrowserRouter([
     path: "/",
     element: <AppShell />,
     children: [
-      { index: true, element: page(<HomePage />) },
-      { path: "settings", element: page(<SettingsPage />) },
+      { index: true, element: <CreatePage /> },
+      { path: "data", element: <DataPage /> },
+      { path: "settings", element: <SettingsPage /> },
       { path: "links/:id", element: <LinkRedirect /> },
       { path: "groups/:id", element: <GroupRedirect /> },
-      { path: "groups", element: <Navigate replace to="/?view=groups" /> },
-      { path: "overview", element: <Navigate replace to="/" /> },
+      { path: "groups", element: <Navigate replace to="/data?view=groups" /> },
+      { path: "overview", element: <Navigate replace to="/data" /> },
       { path: "*", element: <Navigate replace to="/" /> },
     ],
   },

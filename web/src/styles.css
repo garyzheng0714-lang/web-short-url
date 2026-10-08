@@ -1,6 +1,31 @@
 @import "tailwindcss";
 @import "./styles/ds-theme.css";
 
+/*
+ * 项目皮肤（Su 允许项目改基变量）：用户 2026-10-08 裁定强调色用 Notion 蓝，主按钮、开关、日历端点这些「主色实心」
+ * 走强调色，不用 Su 默认的墨色。只改变量，组件源码不动。
+ */
+:root,
+[data-theme="light"] {
+  --base-primary: #2383e2;
+}
+:root,
+[data-theme] {
+  --ds-action: var(--ds-primary);
+  --ds-action-hover: var(--ds-primary-hover);
+  --ds-action-fg: var(--ds-primary-fg);
+}
+
+/*
+ * 数据卡片（用户 2026-10-08：数据尽量用卡片呈现）：在 .cards 里把 Su 的面提成白底柔影卡，提法与浮层里相同（ds-theme.css），
+ * Card / Surface 按自身宽度留内边距。
+ */
+.cards {
+  --ds-panel-padding: 1;
+  --ds-panel: var(--ds-card);
+  --ds-shadow-panel: var(--ds-shadow-card);
+}
+
 html, body, #root { height: 100%; margin: 0; }
 body { font-family: var(--ds-font-sans); }
 .lucide { stroke-width: 1.5; }

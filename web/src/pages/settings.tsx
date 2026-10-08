@@ -1,18 +1,42 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { NumberField } from "@/components/ui/number-field";
 import { ActionButton } from "@/components/ui/action-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tag } from "@/components/ui/tag";
 import { Avatar } from "@/components/ui/avatar";
 import { useBootstrap } from "@/app/bootstrap";
-import { api, ApiError, type SyncStatus } from "@/lib/api";
+import { api, ApiError, type Member, type SyncStatus } from "@/lib/api";
 import { fmtDateTime, formatNumber, relativeTime } from "@/lib/format";
 
 const NONE = "__none";
 const JOB_LABEL: Record<string, string> = { inventory_full: "全量盘点", inventory: "增量盘点", totals_hot: "热门累计", totals_initial: "新短链累计", totals_warm: "常规累计", totals_cold: "冷门累计" };
+
+/** 每月额度：直接输入任意条数，或点 ± 十条一档（Shift / PageUp 一百条）；停手 0.6 秒后保存，按住连点只存最后一次 */
+function QuotaField({ user, onSaved }: { user: Member; onSaved: (r: { monthly_quota: number | null; limit: number }) => void }) {
+  const [value, setValue] = useState(user.limit);
+  const saved = useRef(user.limit);
+  useEffect(() => {
+    if (value === saved.current) return;
+    const t = window.setTimeout(async () => {
+      try {
+        const r = await api.updateUser(user.open_id, { monthly_quota: value });
+        saved.current = r.limit;
+        onSaved(r);
+        toast.success(`${user.name} 的每月额度改为 ${r.limit} 条`);
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : "保存失败");
+        setValue(saved.current);
+      }
+    }, 600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return <NumberField label={`${user.name} 的每月额度`} value={value} onValueChange={setValue} min={0} max={100000} step={10} largeStep={100} unit="条" className="w-40" />;
+}
 
 export function SettingsPage() {
   const { data: boot, refresh } = useBootstrap();
@@ -203,7 +227,7 @@ export function SettingsPage() {
                 <TableRow>
                   <TableHead>成员</TableHead>
                   <TableHead className="w-28 text-right">本月已生成</TableHead>
-                  <TableHead className="w-36">每月额度</TableHead>
+                  <TableHead className="w-44">每月额度</TableHead>
                   <TableHead className="w-24">角色</TableHead>
                 </TableRow>
               </TableHeader>
@@ -218,30 +242,13 @@ export function SettingsPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{u.used_this_month}</TableCell>
                     <TableCell>
-                      <Select
-                        value={String(u.limit)}
-                        onValueChange={async (v) => {
-                          try {
-                            const r = await api.updateUser(u.open_id, { monthly_quota: Number(v) });
-                            setUsers((list) => list.map((x) => (x.open_id === u.open_id ? { ...x, monthly_quota: r.monthly_quota, limit: r.limit } : x)));
-                            toast.success(`${u.name} 的每月额度改为 ${r.limit} 条`);
-                            if (u.open_id === boot.user.open_id) void refresh();
-                          } catch (e) {
-                            toast.error(e instanceof ApiError ? e.message : "保存失败");
-                          }
+                      <QuotaField
+                        user={u}
+                        onSaved={(r) => {
+                          setUsers((list) => list.map((x) => (x.open_id === u.open_id ? { ...x, monthly_quota: r.monthly_quota, limit: r.limit } : x)));
+                          if (u.open_id === boot.user.open_id) void refresh();
                         }}
-                      >
-                        <SelectTrigger aria-label={`${u.name} 的每月额度`} className="w-28">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {[...new Set([u.limit, 50, 100, 200, 500, 1000, 5000])].sort((a, b) => a - b).map((n) => (
-                            <SelectItem key={n} value={String(n)}>
-                              {n} 条
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </TableCell>
                     <TableCell>{u.is_admin ? <Tag variant="chip">管理员</Tag> : <span className="text-fg-muted">成员</span>}</TableCell>
                   </TableRow>

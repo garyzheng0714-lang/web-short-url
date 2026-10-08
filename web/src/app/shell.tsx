@@ -1,25 +1,25 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { FolderOpen, Link2, LogOut, Settings } from "lucide-react";
+import { ChartLine, Link2, Settings } from "lucide-react";
 import { Split, SplitPane } from "@/components/ui/split";
-import { NavItem, NavMenu } from "@/components/ui/nav-item";
-import { Avatar } from "@/components/ui/avatar";
+import { NavItem } from "@/components/ui/nav-item";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
+import { UserMenu } from "@/components/ui/user-menu";
 import { BootstrapProvider, useBootstrap } from "./bootstrap";
 import { api } from "@/lib/api";
 import { clearSessionToken } from "@/lib/session";
 
-/** 「短链」「分组」是首页的两种视图（同一页，?view=groups），「设置」是单独一页 */
+const BRAND = "短链生成工具";
 const PAGES = [
-  { key: "links", to: "/", label: "短链", icon: <Link2 aria-hidden /> },
-  { key: "groups", to: "/?view=groups", label: "分组", icon: <FolderOpen aria-hidden /> },
+  { key: "create", to: "/", label: "生成短链", icon: <Link2 aria-hidden /> },
+  { key: "data", to: "/data", label: "短链访问数据", icon: <ChartLine aria-hidden /> },
   { key: "settings", to: "/settings", label: "设置", icon: <Settings aria-hidden /> },
 ] as const;
 
 function useCurrentKey() {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   if (pathname.startsWith("/settings")) return "settings";
-  return new URLSearchParams(search).get("view") === "groups" ? "groups" : "links";
+  if (pathname.startsWith("/data")) return "data";
+  return "create";
 }
 
 async function logout() {
@@ -28,50 +28,48 @@ async function logout() {
   window.location.replace("/login");
 }
 
-function Sidebar() {
+/** 账号入口：头像点开是二级菜单（身份、退出登录），不在侧栏上直接摆退出按钮 */
+function Account({ className }: { className?: string }) {
   const { data } = useBootstrap();
+  return <UserMenu user={{ name: data.user.name || "用户", avatar: data.user.avatar_url || undefined }} onSignOut={logout} className={className} />;
+}
+
+/**
+ * 侧栏：站名 + 账号菜单，下面三个入口。导航项不放进 NavMenu：那样会有一块跟随悬停底和一块滑动的当前底叠着追，
+ * 切换显得拖沓；单独放时当前底是静态的、悬停是 CSS，点了直接到位。
+ */
+function Sidebar() {
   const current = useCurrentKey();
   return (
     <SplitPane asChild width={228} scroll={false} surface="none" className="px-2">
       <nav aria-label="工作区" className="flex flex-col">
-        <div className="flex h-(--ds-header-h) shrink-0 items-center px-2 text-sm font-semibold">FBIF 短链</div>
-        <NavMenu>
+        <div className="flex h-(--ds-header-h) shrink-0 items-center justify-between pl-2">
+          <span className="text-sm font-semibold">{BRAND}</span>
+          <Account />
+        </div>
+        <div className="grid gap-(--ds-gap-row)">
           {PAGES.map((p) => (
             <NavItem key={p.key} asChild icon={p.icon} active={p.key === current}>
               <Link to={p.to}>{p.label}</Link>
             </NavItem>
           ))}
-        </NavMenu>
-        <div className="mt-auto flex items-center gap-2 px-2 py-3">
-          <Avatar name={data.user.name || "用户"} src={data.user.avatar_url || undefined} size={24} shape="circle" />
-          <span className="min-w-0 flex-1 truncate text-sm">{data.user.name}</span>
-          <Tooltip content="退出登录">
-            <Button variant="ghost" size="icon-sm" aria-label="退出登录" onClick={() => void logout()}>
-              <LogOut />
-            </Button>
-          </Tooltip>
         </div>
       </nav>
     </SplitPane>
   );
 }
 
-/** 窄屏（< 768）：侧栏让位，页面顶上一行同样的入口 */
+/** 窄屏（< 768）：侧栏让位，顶上一行同样的入口，账号菜单在行尾 */
 function NarrowNav() {
   const current = useCurrentKey();
   return (
     <div className="flex h-(--ds-header-h) shrink-0 items-center gap-1 px-6 @3xl/app:hidden">
-      <span className="mr-2 text-sm font-semibold">FBIF 短链</span>
       {PAGES.map((p) => (
-        <Button key={p.key} asChild variant="ghost" size="sm" aria-current={p.key === current ? "page" : undefined}>
+        <Button key={p.key} asChild variant="ghost" size="sm" aria-current={p.key === current ? "page" : undefined} className="first:edge-start">
           <Link to={p.to}>{p.label}</Link>
         </Button>
       ))}
-      <Tooltip content="退出登录">
-        <Button variant="ghost" size="icon-sm" aria-label="退出登录" className="edge-end ml-auto" onClick={() => void logout()}>
-          <LogOut />
-        </Button>
-      </Tooltip>
+      <Account className="edge-end ml-auto" />
     </div>
   );
 }

@@ -7,7 +7,7 @@
 ## 硬边界
 
 - 只有 `main` 一个分支，push 即部署生产；动手前本地过 `npm test`、`npm run build:web`、`web/scripts/ui-check.mjs`。
-- 公开入口只有 `/api/health`、`/login`、`/auth/feishu/*`、`/go`（仅短链域名）、`/api/webhooks/xiaomark`（验签）。其余页面与 API 必须经过 `requireAuth`；写操作用 `canManage`，管理接口用 `requireAdmin`。
+- 公开入口只有 `/api/health`、`/login`、`/auth/feishu/*`、`/go`（仅短链域名）、`/api/webhooks/xiaomark`（验签）。其余页面与 API 必须经过 `requireAuth`；管理员看全部，其他人只看、只改自己创建的短链（`canView` / `canManage` / `visibleSql`，`test/visibility.test.js` 守着），管理接口用 `requireAdmin`。
 - 小码 API key 只在服务端，前端没有自填 key 的入口，不要加回去。
 - 列表与统计读本地镜像，不在请求里直接打小码；要新数据改 `lib/sync.js` 的分层或 TTL。写操作先打小码成功再回写本地。
 - SQLite 迁移写在 `lib/db.js` 的 `MIGRATIONS`，加版本号、保持幂等、同步搬外键。

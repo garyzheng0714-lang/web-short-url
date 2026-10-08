@@ -127,7 +127,7 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
             </Tag>
           ) : null}
           {link.name && !/^短链/.test(link.name) ? <span className="text-fg">{link.name}</span> : null}
-          <Link to={`/groups/${encodeURIComponent(link.group_id || "")}`} className="hover:text-fg">
+          <Link to={`/data?group=${encodeURIComponent(link.group_id || "")}`} className="hover:text-fg">
             {link.group_name || "未分组"}
           </Link>
           {link.creator ? (
