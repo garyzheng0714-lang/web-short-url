@@ -4,12 +4,13 @@
 
 ## 1. 自动部署（push main 即上线）
 
-`.github/workflows/deploy.yml` 四步：
+`.github/workflows/deploy.yml`：
 
-1. CI 用 Node 22 在 `web/` 执行 `npm ci && npm run build`。
-2. ssh 到服务器 `git pull --ff-only`（HTTPS 拉公开仓库）。
-3. scp `web/dist` 到服务器同路径（先清空再覆盖）。
-4. ssh `npm ci --omit=dev`、`pm2 restart web-short-url --update-env`、`curl /api/health` 验活，失败打印 PM2 日志并退出非零。
+1. CI 用 Node 22 在 `web/` 执行 `npm ci && npm run build`，并用 `git archive` 打源码包。
+2. scp 源码包、文件清单和 `web/dist` 到独立暂存目录 `/opt/web-short-url-incoming`（服务器不访问 GitHub，阿里云到 GitHub 经常断）。
+3. ssh：备份 `shorturl.db` 到 `backups/`（留 5 份）→ 删除上一版有、这一版没有的受控文件 → 解压覆盖 → 换入 `web/dist` → 尽力同步 git 状态 → `npm ci --omit=dev` → `pm2 restart --update-env` → `curl /api/health` 验活，失败打印 PM2 日志并退出非零。
+
+绝不对项目根目录用 scp 的 `rm`：`.env`、`shorturl.db`、`node_modules` 都在那里。
 
 没有 staging。改前先在本地跑 `npm test`、`npm run build:web` 和 `web/scripts/ui-check.mjs`。
 

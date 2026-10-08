@@ -48,7 +48,7 @@ Express（server.js）
 | 测试 | `node:test` | `npm test` |
 | 真实浏览器走查 | Playwright 驱动本机 Chrome（`web/scripts/ui-check.mjs`） | 截图进 `web/.ui-check/` |
 | 进程 / 代理 | PM2、Caddy | 服务器 121.40.214.5，端口 3010 |
-| CI/CD | GitHub Actions：CI 构建前端 → scp 产物 → 服务器拉代码重启 | 分支 `main` |
+| CI/CD | GitHub Actions：CI 构建前端并打源码包 → scp 到暂存目录 → 服务器解压重启 | 分支 `main` |
 
 上游：`https://api.xiaomark.com`（文档快照 `docs/xiaomark-api/`，2026-02-24）、飞书开放平台。
 
@@ -336,7 +336,7 @@ API 层 `wrap()`；同步任务每次运行写 `sync_runs`，失败不影响其�
 
 ## 23. 部署
 
-分支 `main`；`.github/workflows/deploy.yml`：checkout → Node 22 构建 `web/` → ssh 拉代码 → scp `web/dist` → ssh `npm ci --omit=dev` + `pm2 restart` + 健康检查。服务器 `/opt/web-short-url`，Caddy 站点 `/etc/caddy/sites/garyzheng-tools.caddy` 反代 3010。首次部署后用 `npm run sync totals` 把累计数据一次补齐，否则按分层节奏约 100 分钟补完。
+分支 `main`；`.github/workflows/deploy.yml`：checkout → Node 22 构建 `web/` → `git archive` 打源码包 → scp 到暂存目录 → ssh 备份数据库、清理旧文件、解压覆盖、换入 `web/dist`、`npm ci --omit=dev`、`pm2 restart`、健康检查。服务器不访问 GitHub。服务器 `/opt/web-short-url`，Caddy 站点 `/etc/caddy/sites/garyzheng-tools.caddy` 反代 3010。首次部署后用 `npm run sync totals` 把累计数据一次补齐，否则按分层节奏约 100 分钟补完。
 
 ---
 

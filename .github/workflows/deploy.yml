@@ -4,9 +4,12 @@ on:
   push:
     branches: [main]
 
+# 服务器（阿里云杭州）访问 GitHub 不稳定，所以服务器不拉 git：
+# CI 打源码包 + 构建前端，一起 scp 到独立的暂存目录，再由服务器解压覆盖、重启。
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -16,32 +19,25 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      # 前端在 CI 构建（服务器只有 2 核且跑着别的服务），产物复制过去
       - name: Build web
-        run: npm ci --no-audit --no-fund && npm run build
         working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
 
-      - name: Pull backend on server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
-            # 2026-09-19 迁到 121.40.214.5：目录属主是迁移带来的未知 uid，服务器也没有 GitHub SSH 凭证。公开仓库直接走 HTTPS 拉取，只允许快进。
-            git -c safe.directory="$PWD" pull --ff-only https://github.com/garyzheng0714-lang/web-short-url.git main
-            mkdir -p web/dist
+      - name: Pack source
+        run: |
+          git archive --format=tar.gz -o release.tar.gz HEAD
+          tar -tzf release.tar.gz | grep -v '/$' | sort > release.files
+          ls -la release.tar.gz web/dist/index.html
 
-      - name: Copy web/dist to server
+      # 只往暂存目录传，绝不对项目根目录用 rm
+      - name: Upload to staging dir
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
-          source: web/dist
-          target: ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
+          source: release.tar.gz,release.files,web/dist
+          target: ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}-incoming
           rm: true
           overwrite: true
 
@@ -51,13 +47,33 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
+          command_timeout: 15m
           script: |
             set -e
-            cd ${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
-            test -f web/dist/index.html
+            APP=${{ secrets.DEPLOY_PATH || '/opt/web-short-url' }}
+            IN="$APP-incoming"
+            cd "$APP"
+            test -f "$IN/release.tar.gz" && test -f "$IN/web/dist/index.html"
+
+            # 迁移前备份数据库（保留最近 5 份）
+            if [ -f shorturl.db ]; then
+              mkdir -p backups
+              sqlite3 shorturl.db ".backup backups/shorturl-$(date +%Y%m%d-%H%M%S).db" 2>/dev/null || cp shorturl.db "backups/shorturl-$(date +%Y%m%d-%H%M%S).db"
+              ls -t backups/shorturl-*.db | tail -n +6 | xargs -r rm -f
+            fi
+
+            # 上一版有、这一版没有的受控文件删掉（node_modules / .env / 数据库不在 git 里，不受影响）
+            git -c safe.directory="$PWD" ls-files 2>/dev/null | sort > /tmp/short-url-old.files || true
+            comm -23 /tmp/short-url-old.files "$IN/release.files" | grep -vE '^(\.env|shorturl\.db)' | xargs -r rm -f
+            tar -xzf "$IN/release.tar.gz" -C "$APP"
+            rm -rf web/dist && mv "$IN/web/dist" web/dist
+
+            # git 状态尽力同步（网络不通也不影响部署）
+            timeout 60 git -c safe.directory="$PWD" fetch -q https://github.com/garyzheng0714-lang/web-short-url.git main && git -c safe.directory="$PWD" reset -q --soft FETCH_HEAD || echo "[deploy] git sync skipped"
+
             npm ci --omit=dev --no-audit --no-fund
             pm2 restart web-short-url --update-env
-            sleep 3
-            # 端口以 .env 为准（新服务器 3000 被别的服务占用，当前 3010）
+            sleep 4
             PORT=$(grep -E '^PORT=' .env | tail -1 | cut -d= -f2)
-            curl -sf "http://127.0.0.1:${PORT:-3000}/api/health" || (echo "Health check failed!" && pm2 logs web-short-url --nostream --lines 40 && exit 1)
+            curl -sf "http://127.0.0.1:${PORT:-3000}/api/health" || (echo "Health check failed!" && pm2 logs web-short-url --nostream --lines 60 && exit 1)
+            rm -rf "$IN"
