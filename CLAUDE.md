@@ -28,7 +28,7 @@
 | `scripts/sync.mjs`、`scripts/dev-session.mjs` | 同步运维、本地测试会话 |
 | `test/` | `node:test` |
 | `web/src/pages`、`web/src/components`、`web/src/lib` | 前端页面、业务组件、API 与会话 |
-| `web/scripts/ui-check.mjs` | 真实 Chrome 走查 |
+| `web/scripts/ui-check.mjs`、`web/scripts/story-check.mjs` | 真实 Chrome 走查；首页图解逐格走查 |
 | `docs/ARCHI.md`、`DEPLOY.md`、`docs/4-unit-tests/TESTING.md` | 现行架构、部署、验证 |
 
 ## 命令

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 真实浏览器走查：本机 Chrome 打开首页，走一遍生成、列表 / 分组视图、详情与分组抽屉、额度弹窗、设置、窄屏；截图 + 报错汇总 + 对齐量测。
+// 真实浏览器走查：本机 Chrome 打开首页，走一遍生成、列表 / 分组视图、详情与分组抽屉、额度弹窗、设置、窄屏；截图 + 报错汇总 + 对齐量测；短链图解的逐格检查另见 story-check.mjs。
 // 用法：SESSION_TOKEN=<token> BASE_URL=http://127.0.0.1:3000 node scripts/ui-check.mjs [--no-create] [--quota]
 //   --no-create 不真的建链（不消耗小码额度）
 //   --quota     额度弹窗：需要事先把这个测试账号的额度调成已用完
@@ -66,10 +66,14 @@ const btnRight = btn.x + btn.width;
 const searchShell = await box(page.locator("[data-slot=search-field]").first()).catch(() => null);
 const sr = searchShell || search;
 check("按钮右缘与搜索框右缘同线", Math.abs(btnRight - (sr.x + sr.width)) <= 1.5, `${btnRight} / ${sr.x + sr.width}`);
-const figures = page.locator('section[aria-label="短链是什么"] figure');
-check("首页有两张对比图", (await figures.count()) === 2);
-const [f1, f2] = [await box(figures.nth(0)), await box(figures.nth(1))];
-check("两张对比图在桌面上并排", Math.abs(f1.y - f2.y) <= 1 && f2.x > f1.x, `y ${f1.y} / ${f2.y}`);
+// 图解：在视口里会动、左缘与输入框同线（逐格的衔接、节奏与减少动态在 scripts/story-check.mjs）
+const story = page.locator("[data-slot=short-link-story]");
+await story.evaluate((el) => el.scrollIntoView({ block: "center" }));
+await page.waitForTimeout(600);
+check("短链图解在视口里播放", (await story.locator("> [role=img]").getAttribute("data-running")) !== null);
+const storyBox = await box(story);
+check("图解左缘与输入框同线", Math.abs(storyBox.x - input.x) <= 1.5, `${storyBox.x} / ${input.x}`);
+await page.evaluate(() => window.scrollTo(0, 0));
 
 let createdUrl = "";
 if (CREATE) {

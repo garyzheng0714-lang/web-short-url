@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { CreateLink } from "@/components/create-link";
-import { Explainers } from "@/components/explainers";
+import { ShortLinkStory } from "@/components/short-link-story";
 import { QuotaDialog } from "@/components/quota-dialog";
 import { QrDialog } from "@/components/qr-dialog";
 import { LinkDrawer } from "@/components/link-drawer";
@@ -175,7 +175,9 @@ export function HomePage() {
         <CreateLink usage={usage} onUsage={setUsage} onCreated={onCreated} onShowQr={setQrUrl} onOpen={openLink} onQuotaExceeded={() => setQuotaOpen(true)} />
       </section>
 
-      <Explainers />
+      <section aria-label="短链是什么">
+        <ShortLinkStory />
+      </section>
 
       <section aria-label="我的短链数据" className="@container/data grid gap-6">
         <div className="flex flex-wrap items-center gap-2">
