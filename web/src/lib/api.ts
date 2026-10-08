@@ -210,7 +210,7 @@ export interface ListLinksParams {
   status?: string;
   creator?: string;
   q?: string;
-  sort?: "created" | "created_asc" | "visits" | "visitors";
+  sort?: "created" | "created_asc" | "visits" | "visits_asc" | "visitors";
   page?: number;
   page_size?: number;
 }

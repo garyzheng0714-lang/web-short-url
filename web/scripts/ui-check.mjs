@@ -177,7 +177,7 @@ if (CREATE) {
   await shot("02-created", false);
   await page.goto(`${BASE}/data`);
   await settle();
-  const firstRow = (await page.locator("main ul[aria-label=短链] > li").first().textContent()) || "";
+  const firstRow = (await page.locator("main [data-slot=sortable-data-table] tbody tr").first().textContent()) || "";
   check("新短链是数据页列表第一行", createdUrl && firstRow.includes(createdUrl.split("/").pop()), firstRow.slice(0, 40));
 }
 
@@ -208,32 +208,68 @@ check("点排行开短链抽屉", /[?&]link=\d+/.test(page.url()), page.url().re
 await page.keyboard.press("Escape");
 await page.waitForTimeout(600);
 
-console.log("4. 短链访问数据：纯列表");
+console.log("4. 短链访问数据：表格");
 await nav.getByRole("link", { name: "短链访问数据" }).click();
 await settle(1200);
 check("侧栏切到「短链访问数据」", page.url().endsWith("/data") && (await nav.getByRole("link", { name: "短链访问数据" }).getAttribute("aria-current")) === "page", page.url().replace(BASE, ""));
-const list = page.locator("main ul[aria-label=短链]");
-const rows = list.locator("> li");
+// DESIGN.md §3.11 数据界面：标签页换对象、工具条同高同外形、表格有表头不套卡片、底栏写条数
+const table = page.locator("main [data-slot=sortable-data-table]");
+const rows = table.locator("tbody tr:not([data-static])");
 await rows.first().waitFor({ timeout: 20000 });
+await page.mouse.move(1000, 10);
 await shot("04-data-list");
 check("列表页没有指标卡与图表", (await page.getByRole("group", { name: "概览" }).count()) === 0 && (await page.locator("main [data-slot=card]").count()) === 0);
-check("短链以列表呈现", (await rows.count()) > 0, `${await rows.count()} 行`);
-const listBg = await list.evaluate((el) => getComputedStyle(el).backgroundColor);
-check("列表是一块实色面（不是透明）", listBg !== "rgba(0, 0, 0, 0)" && listBg !== "transparent", listBg);
+const heads = (await table.locator("thead th").allTextContents()).map((t) => t.trim());
+check("短链以表格呈现、有表头", (await rows.count()) > 0 && ["短链", "目标链接", "分组", "创建时间", "状态", "访问"].every((h) => heads.some((x) => x.startsWith(h))), `${await rows.count()} 行 · ${heads.filter(Boolean).join(" / ")}`);
+const wrapper = await table.evaluate((el) => { for (let n = el.parentElement; n && n.tagName !== "MAIN"; n = n.parentElement) { const cs = getComputedStyle(n); if (cs.boxShadow !== "none" || cs.backgroundColor !== "rgba(0, 0, 0, 0)") return n.className.slice(0, 60); } return ""; });
+check("表格不套卡片，直接放在内容面上", !wrapper, wrapper || "无外框");
+check("「短链 / 分组」是页头下的标签页", (await page.getByRole("tab", { name: "短链" }).getAttribute("aria-selected")) === "true" && (await page.getByRole("tab", { name: "分组" }).count()) === 1);
+const tools = await page.locator("[role=toolbar][aria-label=筛选]").evaluate((el) => [...el.querySelectorAll("[data-slot=search-field], button[role=combobox]")].map((c) => { const shape = c.matches(".rounded-control") ? c : c.querySelector(".rounded-control") || c; const r = shape.getBoundingClientRect(); return { h: Math.round(r.height), radius: getComputedStyle(shape).borderTopLeftRadius }; }));
+check("工具条里的搜索、分组、状态同高同圆角", tools.length === 3 && tools.every((t) => t.h === tools[0].h && t.radius === tools[0].radius), tools.map((t) => `${t.h}/${t.radius}`).join(" · "));
 const rowBoxes = await Promise.all([0, 1, 2].map((i) => rows.nth(i).boundingBox()));
-check("列表行等高、左右缘对齐", rowBoxes.every((b) => Math.abs(b.height - rowBoxes[0].height) <= 0.5 && Math.abs(b.x - rowBoxes[0].x) <= 0.5 && Math.abs(b.width - rowBoxes[0].width) <= 0.5));
-const lb = await box(list);
-const dh1 = await box(page.getByRole("heading", { name: "短链访问数据" }));
-const searchBox = await box(page.locator("[data-slot=search-field]").first());
-check("标题与列表左缘同线、搜索框与列表右缘同线", Math.abs(dh1.x - lb.x) <= 1.5 && Math.abs(searchBox.x + searchBox.width - (lb.x + lb.width)) <= 1.5, `左 ${dh1.x}/${lb.x} 右 ${searchBox.x + searchBox.width}/${lb.x + lb.width}`);
-const pills = await rows.evaluateAll((els) => els.slice(0, 6).map((el) => { const r = el.querySelector("[data-part=visits]")?.getBoundingClientRect(); return r ? Math.round(r.right) : null; }));
-check("访问次数右缘同线", pills.every((x) => x !== null && Math.abs(x - pills[0]) <= 1), pills.join(" / "));
-const statusCells = await rows.evaluateAll((els) => els.slice(0, 20).map((el) => { const t = el.querySelector("[data-part=status] [data-slot=tag]"); const dot = t?.querySelector("[data-slot=tag-dot]"); return t ? { text: t.textContent.trim(), dot: dot ? getComputedStyle(dot).backgroundColor : "" } : null; }));
-const normal = statusCells.find((c) => c && c.text === "正常");
-check("列表有状态列，正常是绿点", statusCells.every(Boolean) && Boolean(normal) && /\(.*\)/.test(normal.dot), normal ? `${normal.text} ${normal.dot}` : "无");
+check("表格行等高", rowBoxes.every((b) => Math.abs(b.height - rowBoxes[0].height) <= 0.5), `${rowBoxes[0].height}`);
+const geo = await page.evaluate(() => {
+  const textBox = (el) => { if (!el) return null; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.textContent.trim() && n.parentElement.getClientRects().length ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) }); const n = w.nextNode(); if (!n) return null; const rg = document.createRange(); rg.selectNodeContents(n); return rg.getBoundingClientRect(); };
+  const t = document.querySelector("main [data-slot=sortable-data-table]");
+  const ths = [...t.querySelectorAll("thead th")];
+  const vi = ths.findIndex((th) => th.textContent.trim().startsWith("访问"));
+  const si = ths.findIndex((th) => th.textContent.trim().startsWith("状态"));
+  const trs = [...t.querySelectorAll("tbody tr:not([data-static])")].slice(0, 6);
+  return {
+    h1: document.querySelector("main h1").getBoundingClientRect().left,
+    head: textBox(ths[0]).left,
+    cell: textBox(trs[0].children[0]).left,
+    search: document.querySelector("[role=toolbar] [data-slot=search-field]").getBoundingClientRect().left,
+    visits: [textBox(ths[vi]).right, ...trs.map((tr) => textBox(tr.children[vi]).right)].map(Math.round),
+    status: trs.map((tr) => { const tag = tr.children[si].querySelector("[data-slot=tag]"); const dot = tag?.querySelector("[data-slot=tag-dot]"); return tag ? { text: tag.textContent.trim(), dot: dot ? getComputedStyle(dot).backgroundColor : "" } : null; }),
+    menu: trs.map((tr) => { const b = tr.querySelector("button[aria-haspopup=menu]").getBoundingClientRect(); const r = tr.getBoundingClientRect(); return Math.round((b.top + b.height / 2 - (r.top + r.height / 2)) * 10) / 10; }),
+  };
+});
+check("标题、搜索框、表头、首列字同一条左线", [geo.head, geo.cell, geo.search].every((x) => Math.abs(x - geo.h1) <= 1), `${geo.h1} / ${geo.search} / ${geo.head} / ${geo.cell}`);
+check("访问数（含表头）右缘同线", geo.visits.every((x) => Math.abs(x - geo.visits[0]) <= 1), geo.visits.join(" / "));
+const normal = geo.status.find((c) => c && c.text === "正常");
+check("状态列：正常是绿点", geo.status.every(Boolean) && Boolean(normal) && /\(.*\)/.test(normal.dot), normal ? `${normal.text} ${normal.dot}` : "无");
+check("⋯ 在行中线上", geo.menu.every((d) => Math.abs(d) <= 0.5), geo.menu.join(" / "));
+const copy0 = rows.first().getByRole("button", { name: "复制短链" });
+const copyIdle = await copy0.evaluate((el) => getComputedStyle(el).opacity);
+await rows.first().hover();
+await page.waitForTimeout(250);
+const copyHover = await copy0.evaluate((el) => getComputedStyle(el).opacity);
+check("复制按钮平时隐藏，指向这一行才出现", copyIdle === "0" && copyHover === "1", `${copyIdle} → ${copyHover}`);
+check("底栏写着第几条、共几条", /第 1–\d+ 条，共 [\d,]+ 条/.test((await page.locator("main section footer").first().textContent()) || ""));
+// 点表头排序：「访问」点两下是从多到少
+const visitsHead = table.locator("thead th", { hasText: "访问" }).getByRole("button");
+await visitsHead.click();
+await settle(800);
+await visitsHead.click();
+await settle(1200);
+const visitNums = (await rows.evaluateAll((els, vi) => els.map((tr) => Number(tr.children[vi].textContent.replace(/[^\d]/g, ""))), heads.findIndex((h) => h.startsWith("访问"))));
+check("点「访问」表头按访问从多到少排", /[?&]sort=visits(&|$)/.test(page.url()) && visitNums.every((v, i) => i === 0 || visitNums[i - 1] >= v), `${page.url().replace(BASE, "")} · ${visitNums.slice(0, 4).join(", ")}`);
+await page.goto(`${BASE}/data`);
+await settle(1200);
 // 暂停要确认：菜单里打开对话框，只有「按住暂停」才执行；轻点不执行（不真的暂停线上短链）
-const firstActive = rows.filter({ has: page.locator("[data-part=status]", { hasText: "正常" }) }).first();
-await firstActive.locator("button[aria-label=更多操作], button[aria-haspopup=menu]").last().click();
+const firstActive = rows.filter({ has: page.locator("[data-slot=tag]", { hasText: "正常" }) }).first();
+await firstActive.locator("button[aria-haspopup=menu]").click();
 await page.getByRole("menuitem", { name: /暂停跳转/ }).click();
 const confirmDlg = page.getByRole("dialog", { name: "暂停跳转" });
 await confirmDlg.waitFor({ timeout: 5000 });
@@ -247,7 +283,7 @@ await confirmDlg.getByRole("button", { name: "取消" }).click();
 await page.waitForTimeout(400);
 
 console.log("5. 详情抽屉");
-await rows.first().locator("button[aria-label^=查看]").click();
+await rows.first().locator("td").first().locator("button").first().click();
 await dialog.getByText("每日访问").first().waitFor({ timeout: 20000 });
 await page.waitForTimeout(1200);
 check("打开抽屉后地址带 ?link=", /[?&]link=\d+/.test(page.url()), page.url().replace(BASE, ""));
@@ -288,13 +324,15 @@ await page.waitForTimeout(600);
 check("Esc 关闭后地址去掉 link", !/[?&]link=/.test(page.url()), page.url().replace(BASE, ""));
 
 console.log("6. 分组列表与分组抽屉");
-await page.getByRole("radio", { name: "分组" }).click();
+await page.getByRole("tab", { name: "分组" }).click();
 await settle();
-const groupRows = page.locator("main ul[aria-label=分组] > li");
+const groupRows = page.locator("main [data-slot=sortable-data-table] tbody tr:not([data-static])");
 await groupRows.first().waitFor();
-check("分组以列表呈现", (await groupRows.count()) > 0, `${await groupRows.count()} 行`);
+check("分组以表格呈现", (await groupRows.count()) > 0, `${await groupRows.count()} 行`);
+const nameCol = await page.locator("main [data-slot=sortable-data-table] col").first().evaluate((c) => c.getBoundingClientRect().width);
+check("从短链切到分组后，分组名一列不被挤窄", nameCol >= 240, `${Math.round(nameCol)}px`);
 await shot("06-groups");
-await groupRows.first().locator("button[aria-label^=查看]").click();
+await groupRows.first().locator("td").first().locator("button").first().click();
 await dialog.getByText("每日访问").first().waitFor({ timeout: 20000 });
 await page.waitForTimeout(1200);
 await shot("07-group-drawer", false);
@@ -353,7 +391,7 @@ if (MEMBER) {
   check("成员没有「全部 / 我的」切换", (await m.page.getByRole("radio", { name: "全部" }).count()) === 0);
   const res = await m.page.evaluate(async () => (await (await fetch("/api/links?scope=all&page_size=100", { credentials: "include" })).json()).data);
   check("成员的接口即使要 scope=all 也只返回自己创建的", res.items.every((l) => l.creator && l.can_manage), `${res.total} 条`);
-  const shown = await m.page.locator("main ul[aria-label=短链] > li").count();
+  const shown = await m.page.locator("main [data-slot=sortable-data-table] tbody tr:not([data-static])").count();
   check("成员页面上的短链行数 = 自己的短链数", shown === Math.min(res.total, 20), `${shown} / ${res.total}`);
   // 用 Playwright 的请求接口（同一份 cookie）探一次，故意的 403 不进页面控制台
   const status = (await m.page.request.get(`${BASE}/api/groups/x/stats`)).status();

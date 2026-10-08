@@ -9,7 +9,7 @@
 - **生成短链**：「生成短链」页只有一个输入框和一个按钮，粘贴长链接即生成；域名与分组用个人设置里的默认值。每人每月默认 100 条（认领来的不算），用完弹窗提示联系 Gary，管理员可在设置页单独调额度。
 - **全量镜像**：定时把小码账号里的项目、分组、全部短链（约 1 万条）同步到本地，列表、搜索、筛选、排序都走本地库。
 - **仪表盘**：区间访问、访客、今日访问、短链数四张指标卡，每日访问图，访问最多的短链与分组两张排行。
-- **短链访问数据**：纯列表（可切到分组），点一行在右侧抽屉看详情（每日访问、24 小时分布、设备、系统、浏览器、网络、地区、来源、高频 IP、访问记录）。
+- **短链访问数据**：表格（标签页切到分组），可按分组、状态筛选，点表头按创建时间或访问排序；点短链在右侧抽屉看详情（每日访问、24 小时分布、设备、系统、浏览器、网络、地区、来源、高频 IP、访问记录）。
 - **可见范围**：管理员看全部；其他人只看、只改自己创建的短链（服务端强制）。本工具建的短链自动记创建者；历史短链由管理员认领或改派；管理员可把分组指定给某人。
 - **管理**：编辑目标链接与名称、暂停 / 恢复跳转（长按确认，列表有状态列）、二维码、跳转链路解析；管理员可看同步状态、小码额度与白名单、成员列表。
 - **Webhook（可选）**：接收小码访问事件推送（验签、去重），可原样转发给原有接收方。
@@ -36,7 +36,7 @@ Express（server.js）
 | --- | --- |
 | `/` | 生成短链：只有输入框和按钮；旧版首页带的查询串转到 `/data` |
 | `/dashboard` | 仪表盘：指标卡、每日访问图、访问最多的短链与分组排行。查询串 `scope=mine`（管理员）、`range=7d/90d`；`link=<id>` 打开短链抽屉，`g=<分组 id>` 打开分组抽屉（管理员） |
-| `/data` | 短链访问数据：纯列表。查询串 `view=groups`、`scope=mine`（管理员）、`group=`、`q=`、`sort=visits`、`page=`；`link=<id>`、`g=<分组 id>` 同上 |
+| `/data` | 短链访问数据：表格。查询串 `view=groups`、`scope=mine`（管理员）、`group=`、`status=active/suspended/banned`、`q=`、`sort=created_asc/visits/visits_asc`、`page=`；`link=<id>`、`g=<分组 id>` 同上 |
 | `/settings` | 默认域名 / 分组 / 机器过滤；管理员：同步状态、小码额度、成员与每月额度（可填任意条数） |
 | `/links/:id`、`/groups`、`/groups/:id`、`/overview` | 旧地址：前三个重定向到 `/data` 对应的抽屉或视图，`/overview` 到 `/dashboard` |
 | `/login` | 飞书登录页（静态 `public/login.html`） |
@@ -50,8 +50,8 @@ Express（server.js）
 | GET | `/api/health` | 健康检查（公开） |
 | GET | `/api/me` | 登录态 |
 | GET | `/api/bootstrap` | 当前用户、域名、分组、默认值、额度、同步摘要 |
-| GET | `/api/links` | 列表：`scope`、`group`、`status`、`domain`、`q`、`sort`、`page`、`page_size` |
-| GET | `/api/links/trends?ids=` | 列表里的 7 日迷你趋势（最多 50 条） |
+| GET | `/api/links` | 列表：`scope`、`group`、`status`、`domain`、`q`、`sort`（`created` / `created_asc` / `visits` / `visits_asc` / `visitors`）、`page`、`page_size` |
+| GET | `/api/links/trends?ids=` | 7 日迷你趋势（最多 50 条；表格改版后前端暂未使用） |
 | POST | `/api/links` | 建链（超出本月额度返回 403 `quota_exceeded`） |
 | GET | `/api/usage` | 本月用量：`used`、`limit`、`remaining`、`contact` |
 | GET / PATCH | `/api/links/:id` | 详情 / 编辑（创建者、分组归属人或管理员） |
