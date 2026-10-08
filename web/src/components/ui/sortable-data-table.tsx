@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { ArrowUp, CircleAlert } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
@@ -8,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { EXIT, SPRINGS } from "@/components/ui/ease"
 import { EmptyState } from "@/components/ui/empty-state"
 import { fromKeyboard } from "@/components/ui/hotkeys"
+import { useGeometryInvariant } from "@/components/ui/invariant"
 import { SwapText } from "@/components/ui/popup"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -18,11 +21,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
  * - 排序：点表头升序、再点降序；空值两个方向都排在最后；数字按数值、文字按中文拼音（Intl.Collator zh-CN，数字串按数值）；同值保持原顺序。
  * - 列宽：第一次有数据时量一次各列宽度并锁住（百分比，table-fixed），之后排序、筛掉几行、选中都不改列宽；resizable 时可以拖表头右缘
  *   或聚焦后用 ←/→ 调宽（改成像素宽，表格比容器宽时在表格里横滚），双击拖拽条恢复。
+ *   同一位置换一组 columns（Tabs 切两张表）就是换一张表：表体整个换掉、列宽重新量、排序回到 defaultSort，使用方不用加 key。
+ *   不变量（开发时崩溃）：百分比锁定后，某列比它表头的字（含内边距）还窄。
  * - 选择：行首复选框、点行空白处、Shift 点选范围（锚点是上一次点的那一行，按当前顺序算）、表头全选（部分选中为半选）；
  *   底栏「共 N 条 / 已选 N 条」与「清除选择」；Esc 清空选择（没有选择时放行给外层）。只算当前这些行里的选择。
  * - 状态：loading 且还没有行 → 占好 5 行的位置，400ms 后才出现骨架（400ms 内完成的不闪）；已有行时刷新保留旧行（aria-busy）。
  *   error → 原位一行「加载失败 + 重试」，表头不动；重试后焦点交给表格外框。没有行 → 原位放空状态（empty，默认「没有记录」）。
- * - 窄容器（< 560，容器查询）：每行折成两行（主列一行、其余列一行小字，数字列前带列名），表头换成全选 + 排序（sm，左缘落在行内容线上）。
+ * - 字色（DESIGN.md §3.11，2026-10-08）：第一列是主列 fg 500，其余列 fg 400，muted 的元数据列 fg-muted。
+ * - 窄容器（< 560，容器查询）：每行折成两行（主列一行、其余列一行灰色小字，数字列前带列名），表头换成全选 + 排序（sm，左缘落在行内容线上）。
  * 选中不改行底色，只靠复选框（同 Table）；行悬停是 Table 的跟随悬停底（骨架、空、出错行标 data-static，不登记）。
  *
  * 动效（DESIGN.md §5.1、§5.2；谁引起 → 用哪条 → 减少动态时）：
@@ -44,6 +50,8 @@ type DataColumn<T> = {
   numeric?: boolean
   /** end：整列右对齐（行尾的操作列）；数字列自动右对齐 */
   align?: "end"
+  /** 元数据列（时间、编号、邮箱）：次级灰（DESIGN.md §3.11；其余列是 fg，第一列是主列 500） */
+  muted?: boolean
   /** 固定宽度（像素） */
   width?: number
   /** 单元格内容；不写时显示字段值，空值显示「—」 */
@@ -69,15 +77,11 @@ const fieldOf = <T,>(row: T, key: string) => (row as Record<string, unknown>)[ke
 
 function sortRows<T>(rows: T[], column: DataColumn<T> | undefined, direction: SortDirection) {
   if (!column) return rows
-  const valueOf = (row: T) => {
-    const v = column.sortValue ? column.sortValue(row) : fieldOf(row, column.key)
-    return v instanceof Date ? v.getTime() : v
-  }
+  const valueOf = (v: unknown) => (v instanceof Date ? v.getTime() : v)
   return rows
-    .map((row, index) => ({ row, index, v: valueOf(row) }))
+    .map((row, index) => ({ row, index, v: valueOf(column.sortValue ? column.sortValue(row) : fieldOf(row, column.key)) }))
     .sort((a, b) => {
-      const ea = isEmpty(a.v)
-      const eb = isEmpty(b.v)
+      const [ea, eb] = [isEmpty(a.v), isEmpty(b.v)]
       if (ea || eb) return ea === eb ? a.index - b.index : ea ? 1 : -1
       const r = typeof a.v === "number" && typeof b.v === "number" ? a.v - b.v : collator.compare(String(a.v), String(b.v))
       return (direction === "asc" ? r : -r) || a.index - b.index
@@ -85,15 +89,51 @@ function sortRows<T>(rows: T[], column: DataColumn<T> | undefined, direction: So
     .map((e) => e.row)
 }
 
+/** 表头一格要多宽：字 + 左右内边距；arrow 时连排序按钮里的箭头与间距 */
+function headNeed(th: HTMLElement, arrow = false) {
+  const label = th.querySelector<HTMLElement>("[data-slot=column-label]")
+  const s = getComputedStyle(th)
+  const button = arrow ? label?.parentElement : null
+  const more = button?.matches("button") ? [...button.children].reduce((w, c) => w + (c === label ? 0 : c.getBoundingClientRect().width + (parseFloat(getComputedStyle(button).columnGap) || 0)), 0) : 0
+  return (label?.getBoundingClientRect().width ?? 0) + more + parseFloat(s.paddingLeft) + parseFloat(s.paddingRight)
+}
+
+/**
+ * 锁列宽（2026-10-08 短链：Tabs 在同一位置换两组 columns，第一列被锁成 40 左右）：
+ * - 只量这组列、这些行：退场中的旧行（上一组 columns、骨架）先拿出排版，量完放回。
+ * - 放得下：照自然排版的比例。放不下（不换行的长网址把表撑宽）：自然宽不超过平均份的列拿自然宽，其余平分余下的，
+ *   平分不到表头宽的拿表头宽——不再整张按比例压，压得短列连表头都放不下。返回各列占表宽的百分比（固定宽的列与选择列另算 pinned）。
+ */
+function lockWidths(table: HTMLTableElement, width: number, pinned: number, fixed: Set<string>) {
+  const exiting = [...table.querySelectorAll<HTMLElement>(":scope > tbody > tr[data-exiting]")].map((tr) => [tr, tr.style.display] as const)
+  exiting.forEach(([tr]) => (tr.style.display = "none"))
+  const heads = [...table.querySelectorAll<HTMLElement>("thead th[data-key]")].filter((th) => !fixed.has(th.dataset.key!))
+  const natural = heads.map((th) => th.getBoundingClientRect().width)
+  const floor = heads.map((th) => headNeed(th, true))
+  exiting.forEach(([tr, display]) => (tr.style.display = display))
+  const sum = natural.reduce((a, b) => a + b, 0)
+  const room = width - pinned
+  let open = heads.map((_, i) => i)
+  let rest = room
+  const out = natural.map((w) => (w * room) / sum)
+  if (sum > room + 0.5)
+    for (const [list, take] of [[natural, (w: number, each: number) => w <= each], [floor, (w: number, each: number) => w > each]] as const) {
+      for (let done = [0]; done.length && open.length; ) {
+        const each = rest / open.length
+        done = open.filter((i) => take(list[i], each))
+        done.forEach((i) => ((out[i] = list[i]), (rest -= list[i])))
+        open = open.filter((i) => !done.includes(i))
+      }
+      open.forEach((i) => (out[i] = rest / open.length))
+    }
+  return Object.fromEntries(heads.map((th, i) => [th.dataset.key!, (out[i] / width) * 100]))
+}
+
 /** 受控 / 非受控两种写法 */
 function useControllable<V>(value: V | undefined, initial: V, onChange?: (v: V) => void) {
   const [inner, setInner] = React.useState(initial)
-  const current = value === undefined ? inner : value
-  const set = (next: V) => {
-    if (value === undefined) setInner(next)
-    onChange?.(next)
-  }
-  return [current, set] as const
+  const set = (next: V) => (value === undefined && setInner(next), onChange?.(next))
+  return [value === undefined ? inner : value, set] as const
 }
 
 /** 过了 ms 才变成 true（加载 400ms 后才出现骨架） */
@@ -111,41 +151,20 @@ function useLate(active: boolean, ms = 400) {
 function SortArrow({ direction }: { direction: SortDirection }) {
   const still = Boolean(useReducedMotion()) || fromKeyboard()
   const [first] = React.useState(() => !still)
+  const rotate = direction === "desc" ? 180 : 0
   return (
-    <motion.span
-      aria-hidden
-      data-slot="sort-arrow"
-      className="inline-flex size-3 shrink-0 items-center justify-center text-fg"
-      initial={first ? { opacity: 0, rotate: direction === "desc" ? 180 : 0 } : false}
-      animate={{ opacity: 1, rotate: direction === "desc" ? 180 : 0 }}
-      transition={still ? INSTANT : { rotate: SPRINGS.fast, opacity: SPRINGS.fast }}
-    >
+    <motion.span aria-hidden data-slot="sort-arrow" className="inline-flex size-3 shrink-0 items-center justify-center text-fg"
+      initial={first ? { opacity: 0, rotate } : false} animate={{ opacity: 1, rotate }}
+      transition={still ? INSTANT : { rotate: SPRINGS.fast, opacity: SPRINGS.fast }}>
       <ArrowUp className="size-3" />
     </motion.span>
   )
 }
 
 function SortableDataTable<T>({
-  rows,
-  columns,
-  rowKey,
-  caption,
-  sort: sortProp,
-  defaultSort = null,
-  onSortChange,
-  selectable = false,
-  selected: selectedProp,
-  defaultSelected = [],
-  onSelectedChange,
-  unit = "条",
-  actions,
-  status = "ready",
-  onRetry,
-  errorTitle = "加载失败",
-  empty,
-  resizable = false,
-  flush = false,
-  className,
+  rows, columns, rowKey, caption, sort: sortProp, defaultSort = null, onSortChange, selectable = false, selected: selectedProp,
+  defaultSelected = [], onSelectedChange, unit = "条", actions, status = "ready", onRetry, errorTitle = "加载失败", empty,
+  resizable = false, flush = false, className,
 }: {
   rows: T[]
   columns: DataColumn<T>[]
@@ -153,13 +172,8 @@ function SortableDataTable<T>({
   rowKey: keyof T | ((row: T) => string)
   /** 表格的名字，给读屏（不显示） */
   caption: string
-  sort?: SortState | null
-  defaultSort?: SortState | null
-  onSortChange?: (sort: SortState) => void
-  selectable?: boolean
-  selected?: string[]
-  defaultSelected?: string[]
-  onSelectedChange?: (keys: string[]) => void
+  sort?: SortState | null; defaultSort?: SortState | null; onSortChange?: (sort: SortState) => void
+  selectable?: boolean; selected?: string[]; defaultSelected?: string[]; onSelectedChange?: (keys: string[]) => void
   /** 底栏计数的量词：「共 5 条」「已选 2 条」；可写「个项目」 */
   unit?: string
   /** 有选择时放在底栏右侧的批量操作 */
@@ -177,7 +191,9 @@ function SortableDataTable<T>({
   const root = React.useRef<HTMLDivElement>(null)
   const tableRef = React.useRef<HTMLTableElement>(null)
   const anchor = React.useRef<string | null>(null)
-  const [sort, setSort] = useControllable(sortProp, defaultSort, (s) => s && onSortChange?.(s))
+  const [sortState, setSort] = useControllable(sortProp, defaultSort, (s) => s && onSortChange?.(s))
+  // 排序的列不在这组 columns 里（同一位置换了一张表）：回到这张表的 defaultSort
+  const sort = sortState && !columns.some((c) => c.key === sortState.key) ? defaultSort : sortState
   const [selectedList, setSelected] = useControllable(selectedProp, defaultSelected, onSelectedChange)
   const [announcement, setAnnouncement] = React.useState("")
   const reduce = useReducedMotion()
@@ -197,20 +213,22 @@ function SortableDataTable<T>({
   const skeleton = status === "loading" && !sorted.length
   const lateSkeleton = useLate(skeleton)
 
-  // ── 列宽：第一次有数据时量一次并锁住（百分比）；拖动后换成像素 ─────────────────────────
+  // ── 列宽：第一次有数据时量一次并锁住（百分比）；拖动后换成像素。两样都记在这组列（signature）名下，换一组列重新量 ──
   const signature = `${selectable}|${columns.map((c) => c.key).join("|")}`
-  const [locked, setLocked] = React.useState<{ sig: string; pct: Record<string, number> } | null>(null)
-  const [px, setPx] = React.useState<Record<string, number> | null>(null)
+  const [locked, setLocked] = React.useState<{ sig: string; pct: Record<string, number>; at: number } | null>(null)
+  const [resized, setResized] = React.useState<{ sig: string; px: Record<string, number> } | null>(null)
   const pct = locked?.sig === signature ? locked.pct : null
+  const px = resized?.sig === signature ? resized.px : null
+  const setPx = (next: Record<string, number> | null) => setResized(next && { sig: signature, px: next })
   React.useLayoutEffect(() => {
     const table = tableRef.current
     if (!table || pct || !showRows) return
     const measure = () => {
-      const total = table.getBoundingClientRect().width
-      if (!total || getComputedStyle(table).display !== "table") return false
-      const next: Record<string, number> = {}
-      table.querySelectorAll<HTMLElement>("thead th[data-key]").forEach((th) => (next[th.dataset.key!] = (th.getBoundingClientRect().width / total) * 100))
-      setLocked({ sig: signature, pct: next })
+      const at = table.parentElement!.clientWidth
+      if (!at || getComputedStyle(table).display !== "table") return false
+      const pinned = columns.reduce((s, c) => s + (c.width ?? 0), selectable ? SELECT_W : 0)
+      const width = Math.max(at, parseFloat(getComputedStyle(table).minWidth) || 0)
+      setLocked({ sig: signature, pct: lockWidths(table, width, pinned, new Set(columns.filter((c) => c.width).map((c) => c.key))), at })
       return true
     }
     if (measure()) return
@@ -219,11 +237,18 @@ function SortableDataTable<T>({
     ro.observe(table)
     return () => ro.disconnect()
   }, [pct, showRows, signature])
-  const measurePx = () => {
-    const out: Record<string, number> = {}
-    tableRef.current?.querySelectorAll<HTMLElement>("thead th[data-key]").forEach((th) => (out[th.dataset.key!] = th.getBoundingClientRect().width))
-    return out
-  }
+  // 不变量：锁定的列宽放不下表头的字（只验百分比锁定、外框不比锁定时窄；拖过的像素宽是人定的）
+  useGeometryInvariant("SortableDataTable", tableRef, (table) => {
+    if (!pct || px || table.parentElement!.clientWidth < locked!.at - 0.5 || getComputedStyle(table).display !== "table") return null
+    for (const th of table.querySelectorAll<HTMLElement>("thead th[data-key]")) {
+      const [label, w, need] = [th.querySelector("[data-slot=column-label]")?.textContent, th.getBoundingClientRect().width, headNeed(th)]
+      if (label && w < need - 0.5)
+        return `「${label}」列锁定后只有 ${w.toFixed(1)}px，放不下表头（要 ${need.toFixed(0)}px）：${columns.find((c) => c.key === th.dataset.key)?.width ? "这列的 width 至少给到表头宽" : "锁列宽时把短列压窄了（量时混着上一组列的行，或整表按比例压）"}`
+    }
+    return null
+  })
+  const measurePx = (): Record<string, number> =>
+    Object.fromEntries([...(tableRef.current?.querySelectorAll<HTMLElement>("thead th[data-key]") ?? [])].map((th) => [th.dataset.key!, th.getBoundingClientRect().width]))
   const last = columns.at(-1)?.key
   const widthOf = (c: DataColumn<T>) =>
     px ? (c.key === last ? undefined : `${px[c.key]}px`) : c.width ? `${c.width}px` : pct ? `${pct[c.key]}%` : undefined
@@ -238,16 +263,9 @@ function SortableDataTable<T>({
   const resizeHandle = (c: DataColumn<T>) => {
     const w = px?.[c.key]
     return (
-      <span
-        role="separator"
-        tabIndex={0}
-        aria-orientation="vertical"
-        aria-label={`调整「${c.label}」列宽`}
-        aria-valuenow={w === undefined ? undefined : Math.round(w)}
-        aria-valuemin={MIN_W}
-        aria-valuemax={MAX_W}
-        data-slot="column-resizer"
-        data-active={resizing === c.key || undefined}
+      <span role="separator" tabIndex={0} aria-orientation="vertical" aria-label={`调整「${c.label}」列宽`}
+        aria-valuenow={w === undefined ? undefined : Math.round(w)} aria-valuemin={MIN_W} aria-valuemax={MAX_W}
+        data-slot="column-resizer" data-active={resizing === c.key || undefined}
         className="group/resize absolute top-0 right-0 z-10 h-full w-2 translate-x-1/2 cursor-col-resize touch-none rounded-sm outline-none focus-visible:focus-ring select-none @max-[560px]/sdt:hidden"
         onPointerDown={(e) => {
           if (e.button !== 0) return
@@ -259,9 +277,7 @@ function SortableDataTable<T>({
           setResizing(c.key)
         }}
         onPointerMove={(e) => drag.current && setWidth(drag.current.key, drag.current.w + e.clientX - drag.current.x)}
-        onPointerUp={stopDrag}
-        onPointerCancel={stopDrag}
-        onDoubleClick={() => setPx(null)}
+        onPointerUp={stopDrag} onPointerCancel={stopDrag} onDoubleClick={() => setPx(null)}
         onKeyDown={(e) => {
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
           e.preventDefault()
@@ -269,10 +285,7 @@ function SortableDataTable<T>({
           setWidth(c.key, base[c.key] + (e.shiftKey ? 64 : 16) * (e.key === "ArrowRight" ? 1 : -1), base)
         }}
       >
-        <span
-          aria-hidden
-          className="absolute inset-y-2 left-1/2 w-px -translate-x-1/2 bg-line-strong opacity-0 transition-opacity duration-(--ds-dur-fast) ease-ds group-hover/resize:opacity-100 group-focus-visible/resize:opacity-100 group-focus-visible/resize:focus-ring group-data-active/resize:opacity-100"
-        />
+        <span aria-hidden className="absolute inset-y-2 left-1/2 w-px -translate-x-1/2 bg-line-strong opacity-0 transition-opacity duration-(--ds-dur-fast) ease-ds group-hover/resize:opacity-100 group-focus-visible/resize:opacity-100 group-focus-visible/resize:focus-ring group-data-active/resize:opacity-100" />
       </span>
     )
   }
@@ -371,38 +384,18 @@ function SortableDataTable<T>({
               const sortable = c.sortable !== false
               const num = numeric(c)
               return (
-                <TableHead
-                  key={c.key}
-                  data-key={c.key}
-                  aria-sort={sortable ? (active ? (sort!.direction === "asc" ? "ascending" : "descending") : "none") : undefined}
-                  className={cn(
-                    "relative",
-                    (num || c.align === "end") && "text-right",
-                    active && "text-fg",
-                    "@max-[560px]/sdt:flex @max-[560px]/sdt:shrink-0 @max-[560px]/sdt:items-center @max-[560px]/sdt:px-2",
-                    !sortable && "@max-[560px]/sdt:hidden"
-                  )}
-                >
+                <TableHead key={c.key} data-key={c.key} aria-sort={sortable ? (active ? (sort!.direction === "asc" ? "ascending" : "descending") : "none") : undefined}
+                  className={cn("relative", (num || c.align === "end") && "text-right", active && "text-fg",
+                    "@max-[560px]/sdt:flex @max-[560px]/sdt:shrink-0 @max-[560px]/sdt:items-center @max-[560px]/sdt:px-2", !sortable && "@max-[560px]/sdt:hidden")}>
                   {sortable ? (
-                    <button
-                      type="button"
-                      data-nav="head"
+                    <button type="button" data-nav="head" onClick={() => sortBy(c)}
                       aria-label={`按${c.label}排序${active ? `，当前${sort!.direction === "asc" ? "升序" : "降序"}` : ""}`}
-                      onClick={() => sortBy(c)}
-                      className={cn(
-                        "group/sort relative inline-flex min-h-8 -mx-2 px-2 pointer-coarse:min-h-11 max-w-full items-center gap-1 rounded-sm outline-none hover:text-fg focus-visible:focus-ring",
-                        num && "flex-row-reverse"
-                      )}
-                    >
-                      <span className="whitespace-nowrap">{c.label}</span>
-                      {active ? (
-                        <SortArrow key={c.key} direction={sort!.direction} />
-                      ) : (
-                        <ArrowUp aria-hidden className="size-3 shrink-0 text-fg-subtle opacity-0 group-hover/sort:opacity-100" />
-                      )}
+                      className={cn("group/sort relative inline-flex min-h-8 -mx-2 px-2 pointer-coarse:min-h-11 max-w-full items-center gap-1 rounded-sm outline-none hover:text-fg focus-visible:focus-ring", num && "flex-row-reverse")}>
+                      <span data-slot="column-label" className="whitespace-nowrap">{c.label}</span>
+                      {active ? <SortArrow key={c.key} direction={sort!.direction} /> : <ArrowUp aria-hidden className="size-3 shrink-0 text-fg-subtle opacity-0 group-hover/sort:opacity-100" />}
                     </button>
                   ) : (
-                    c.label
+                    <span data-slot="column-label">{c.label}</span>
                   )}
                   {resizable && c.key !== last ? resizeHandle(c) : null}
                 </TableHead>
@@ -410,7 +403,8 @@ function SortableDataTable<T>({
             })}
           </TableRow>
         </TableHeader>
-        <TableBody className="@max-[560px]/sdt:block">
+        {/* 换一组列就是换一张表：表体整个换掉，旧行不在新列里淡出，也不混进量列宽 */}
+        <TableBody key={signature} className="@max-[560px]/sdt:block">
           {showRows
             ? sorted.map((row, i) => {
                 const key = keys[i]
@@ -435,8 +429,8 @@ function SortableDataTable<T>({
                       </TableCell>
                     ) : null}
                     {columns.map((c, ci) => (
-                      <TableCell key={c.key} className={cn("truncate", ci === 0 && "text-fg", numeric(c) && "font-mono tabular-nums", (numeric(c) || c.align === "end") && "text-right", NARROW_CELL,
-                        ci === 0 ? cn("@max-[560px]/sdt:basis-full @max-[560px]/sdt:text-left", actionCol && "@max-[560px]/sdt:pr-16") : c === actionCol ? cn(NARROW_ACTION, "overflow-visible") : "@max-[560px]/sdt:text-xs",
+                      <TableCell key={c.key} muted={c.muted} className={cn("truncate", ci === 0 && "font-medium", numeric(c) && "font-mono tabular-nums", (numeric(c) || c.align === "end") && "text-right", NARROW_CELL,
+                        ci === 0 ? cn("@max-[560px]/sdt:basis-full @max-[560px]/sdt:text-left", actionCol && "@max-[560px]/sdt:pr-16") : c === actionCol ? cn(NARROW_ACTION, "overflow-visible") : "@max-[560px]/sdt:text-xs @max-[560px]/sdt:text-fg-muted",
                         c === actionCol && (flush ? "@max-[560px]/sdt:right-0" : "@max-[560px]/sdt:right-4"))}>
                         {ci > 0 && numeric(c) ? <span className="hidden font-sans text-fg-muted @max-[560px]/sdt:inline">{c.label} </span> : null}
                         {c.render ? c.render(row) : isEmpty(fieldOf(row, c.key)) ? "—" : String(fieldOf(row, c.key))}

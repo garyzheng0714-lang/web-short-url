@@ -1,11 +1,8 @@
-"use client"
-
 import * as React from "react"
 import { ListFilter, X } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -21,9 +18,13 @@ import { DUR, EASE_OUT, SPRINGS } from "@/components/ui/ease"
 import { fromKeyboard } from "@/components/ui/hotkeys"
 import { SwapText } from "@/components/ui/popup"
 import { SearchField } from "@/components/ui/search-field"
+import { fieldTrigger } from "@/components/ui/select"
 
 /**
  * 筛选工具栏：列表、表格上方的一行——搜索框（可选）+ 条件胶囊「字段 · 值 ×」+「筛选」两级菜单（字段 → 值）+「清除」。
+ * - 一行一族（DESIGN.md K6、§3.11，2026-10-08）：「筛选」是可拨的，和搜索框同一张凹面（select 的 fieldTrigger：同高 28、同圆角、同底同线，
+ *   浅色深色都一样）；「清除」跟着这一行用同一张面，不另起一种外形。行尾的排序写 Select（SelectTrigger 高 28，「排序：最近下单 ▾」）。
+ *   原来是无底的 ghost，和有凹面的搜索框一行两种外形。图标那一侧离边 6，和搜索框的放大镜同一条线。
  * - 一个字段一个胶囊：单选字段再选一个值就替换；multiple 字段的值是勾选（菜单不关），胶囊写「进行中、待评审」，超过两个写「3 项」。
  * - 菜单是 DropdownMenu 的子菜单：→ 进入字段的值、← 回到字段、Esc 关闭并把焦点还给「筛选」；当前值打勾，hint（例如条数）在右侧。
  * - 删一个胶囊：焦点交给后一个胶囊的 ×（没有就前一个，再没有就「筛选」）；「清除」清掉条件和搜索词，焦点回「筛选」。
@@ -52,6 +53,8 @@ type FilterField = {
 type FilterValue = Record<string, string[]>
 
 const INSTANT = { duration: 0 } as const
+/** 工具条里的触发器：高 28，和搜索框同一张面（fieldTrigger） */
+const TRIGGER = "hit-area relative inline-flex h-(--ds-h-sm) shrink-0 px-(--ds-pad-row)"
 const MOVE = { layout: SPRINGS.smooth } as const
 const opt = (o: string | FilterOption): FilterOption => (typeof o === "string" ? { value: o } : o)
 const nameOf = (f: FilterField, v: string) => opt(f.options.find((o) => opt(o).value === v) ?? v).label ?? v
@@ -179,10 +182,10 @@ function FilterToolbar({
           <motion.span key="actions" {...slide} className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" data-slot="filter-trigger">
-                  <ListFilter />
+                <button type="button" data-slot="filter-trigger" className={cn(fieldTrigger, TRIGGER, "ps-[calc((var(--ds-h-sm)-16px)/2)]")}>
+                  <ListFilter aria-hidden />
                   {label}
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 {fields.map((f) => {
@@ -228,9 +231,9 @@ function FilterToolbar({
             <AnimatePresence initial={false}>
               {dirty ? (
                 <motion.span key="clear" {...enter} animate={{ opacity: 1, scale: 1 }} className="flex">
-                  <Button variant="ghost" size="sm" data-slot="filter-clear" onClick={clear}>
+                  <button type="button" data-slot="filter-clear" className={cn(fieldTrigger, TRIGGER)} onClick={clear}>
                     清除
-                  </Button>
+                  </button>
                 </motion.span>
               ) : null}
             </AnimatePresence>

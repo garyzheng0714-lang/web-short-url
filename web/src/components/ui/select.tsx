@@ -1,3 +1,5 @@
+"use client"
+
 import { nextFrame } from "@/components/ui/frame"
 
 import * as React from "react"
@@ -190,6 +192,17 @@ function SelectValue({ className, ...props }: React.ComponentProps<typeof Select
 }
 
 /**
+ * 「可拨」的外观（DESIGN.md K6、§3.11，2026-10-08）：SelectTrigger field 的凹面，和输入框、搜索框同一张面。
+ * 工具条里的筛选、排序触发器（DropdownMenuTrigger asChild 包的 <button>）也用它，浅色、深色都和搜索框一模一样；
+ * 高度、宽度、左右内边距由调用处给。直接放在里面的图标 16、次级灰。
+ */
+const fieldTrigger = [
+  fieldSurface,
+  "items-center gap-(--ds-gap-control) rounded-control text-left text-(length:--ds-text-control) leading-(--ds-lh-control) text-fg outline-none select-none",
+  "[&>svg]:size-(--ds-icon) [&>svg]:shrink-0 [&>svg]:text-fg-muted",
+]
+
+/**
  * variant="inline"：设置面板、检查器里「标签 … 值 ⌄」那一行右端的值。平放，没有凹槽；悬停和展开时浅灰底（像 macOS 的弹出按钮），
  * 文字落在行的右边线上（edge-end），宽度跟着值走。
  */
@@ -215,11 +228,7 @@ function SelectTrigger({
       data-variant={variant}
       className={cn(
         variant === "field"
-          ? [
-              fieldSurface,
-              "flex h-(--ds-h-md) w-full min-w-0 items-center justify-between gap-(--ds-gap-control) rounded-control px-(--ds-pad-x-md) text-left text-(length:--ds-text-control) leading-(--ds-lh-control) text-fg outline-none",
-              "[&>svg]:size-(--ds-icon)",
-            ]
+          ? [fieldTrigger, "flex h-(--ds-h-md) w-full min-w-0 justify-between px-(--ds-pad-x-md)"]
           : [
               // 行末用 edge-end 时推出去的是自己的内边距 8 和 ⌄ 两侧的留白 3，⌄ 的线条落在内容线上；
               // 行首用 edge-start 时起头的是字，只推内边距 8，字的左缘落在列线上（2026-10-06：成员角色列差 3px）
@@ -468,4 +477,4 @@ function SelectSeparator({ className, ...props }: React.ComponentProps<typeof Se
   return <SelectPrimitive.Separator className={cn("-mx-(--ds-pad-popover) my-1 h-px bg-line", className)} {...props} />
 }
 
-export { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue }
+export { fieldTrigger, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue }

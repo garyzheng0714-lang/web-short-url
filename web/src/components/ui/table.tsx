@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { AnimatePresence, motion, useIsPresent, useReducedMotion, type HTMLMotionProps } from "motion/react"
 
@@ -10,10 +12,15 @@ import { useInvariant } from "@/components/ui/invariant"
 
 /**
  * 表格：不套卡片，浅灰表头、行间 1px 极淡分隔线。行高跟控件档：默认 36、紧凑 28（DESIGN.md §3.1「控件」；density 钉住一档，不写跟随外面的 Density）。
- * 首尾列内边距 16，格间 12；字是控件字（15/24 · 13/20）。选中行不改底色，只靠行首复选框表达。数字列用 font-mono tabular-nums 右对齐。
+ * 首尾列内边距 --ds-table-edge（平时 16；Page width="app" 里 8：行线、悬停底落在标题线上，字缩进 8，先例 Stripe、Notion），格间 12；
+ * 字是控件字（15/24 · 13/20）。选中行不改底色，只靠行首复选框表达。
+ * 字色分主次（DESIGN.md §3.11「数据界面」，2026-10-08：原来所有格子平时都是 fg-muted，主列和次列分不出来，用户看短链列表说「极其丑的表头设计」）：
+ * - 单元格默认 fg 400；主列由使用方加 font-medium（500）；只有元数据列（创建时间、编号、邮箱、最近使用）写 muted → fg-muted。
+ * - 数字、金额、日期列写 align="end"：右对齐 + tabular-nums，表头同一列也写 align="end"。
+ * - 每列有列名（行操作那一列除外）；状态只标偏离常态的；计数、金额是纯文本，不进 Tag。
  * 行悬停（DESIGN.md K2、§4.3「悬停」）：整张表只有一块跟随悬停底（ui/fluid-hover），画在表格后面；表体的行按顺序登记，表头不登记。
  * - 亮着的那行：它的下边线和上一行的下边线变透明（表头下线在第一行亮时变透明），底读起来是干净的一整块；线的颜色走 80ms 过渡，不闪。
- * - 单元格字平时 fg-muted，亮着的那行 fg（80ms）；使用方在格子上写了 text-fg 的照旧。
+ * - 亮着的那行字色不变（主次在静止时就分清，不靠悬停才变深）。
  * - 指针在表头或末行之下时落到最近的行；表格不转发空隙点击（行里多半是复选框，点空白不该替人勾选）。
  * - 不该亮的行（骨架、空、出错、分组标题行）标 data-static；整张表都不该亮（只读预览、矩阵）写 rowHover={false}。
  * flush（正文表格）：外框向两侧出血 8，首尾格留 8，字仍落在上下文的内容线上；表头不铺底（一列一条线，只留表头下线），
@@ -27,7 +34,7 @@ import { useInvariant } from "@/components/ui/invariant"
  * 不变量（开发时崩溃）：表头有底色时首末字离底色边 ≥ 6。
  *
  * 动效（DESIGN.md §4.2；表体的行，子项要带稳定 key；行高不变）：
- * - 行悬停 → 一块底 fast（0.08s）跟到指针下的行，淡出 0.06s；线与字色 80ms。
+ * - 行悬停 → 一块底 fast（0.08s）跟到指针下的行，淡出 0.06s；线 80ms。
  * - 排序（指针点表头）→ 行的位置走 layout，moderate（0.16s，不过冲），可中途反向 → 减少动态时直接到位。
  * - 插入（系统 / 指针）→ 新行 opacity 0 → 1（fast）、scale .98 → 1，下面的行同一条 moderate 让位 → 减少动态时只淡入。
  * - 删除 → 原地 EXIT.fast（0.06s）淡出并缩到 .98，再由下面的行 moderate 补上；退场中的行让出悬停序号 → 减少动态时只淡出、补位直接到位
@@ -257,13 +264,18 @@ function BodyRow(props: React.ComponentProps<"tr">) {
   )
 }
 
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+/** 列的对齐：end = 数字、金额、日期列，右对齐、等宽数字（表头与单元格同写） */
+type TableAlign = "start" | "end"
+
+function TableHead({ className, align, ...props }: Omit<React.ComponentProps<"th">, "align"> & { align?: TableAlign }) {
   return (
     <th
       data-slot="table-head"
+      data-align={align}
       className={cn(
-        "h-[calc(var(--ds-h-row)-1px)] pointer-coarse:h-(--ds-h-md) px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-fg-muted first:pl-4 last:pr-4",
+        "h-[calc(var(--ds-h-row)-1px)] pointer-coarse:h-(--ds-h-md) px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-fg-muted first:pl-(--ds-table-edge) last:pr-(--ds-table-edge)",
         "[&:has([role=checkbox])]:w-4 [&:has([role=checkbox])]:pr-0",
+        align === "end" && "text-right",
         className
       )}
       {...props}
@@ -271,15 +283,19 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   )
 }
 
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+/** muted：元数据列（创建时间、编号、邮箱、最近使用）用次级灰；其余列都是 fg（DESIGN.md §3.11） */
+function TableCell({ className, align, muted = false, ...props }: Omit<React.ComponentProps<"td">, "align"> & { align?: TableAlign; muted?: boolean }) {
   return (
     <td
       data-slot="table-cell"
+      data-align={align}
+      data-muted={muted || undefined}
       className={cn(
         // 行距含 1px 分隔线落在控件档上：格高 = 行高 − 1，竖向内边距 = (格高 − 行盒) / 2（36 = 5.5 + 24 + 5.5 + 1 · 28 = 3.5 + 20 + 3.5 + 1），两行的格子照常长高
-        "h-[calc(var(--ds-h-row)-1px)] pointer-coarse:h-(--ds-h-md) px-3 py-[calc((var(--ds-h-row)-1px-var(--ds-lh-control))/2)] align-middle whitespace-nowrap font-normal first:pl-4 last:pr-4",
-        "text-fg-muted transition-colors duration-(--ds-dur-fast) ease-ds [tr[data-fluid-hover]>&]:text-fg",
+        "h-[calc(var(--ds-h-row)-1px)] pointer-coarse:h-(--ds-h-md) px-3 py-[calc((var(--ds-h-row)-1px-var(--ds-lh-control))/2)] align-middle whitespace-nowrap font-normal first:pl-(--ds-table-edge) last:pr-(--ds-table-edge)",
+        muted ? "text-fg-muted" : "text-fg",
         "[&:has([role=checkbox])]:w-4 [&:has([role=checkbox])]:pr-0",
+        align === "end" && "text-right tabular-nums",
         className
       )}
       {...props}
@@ -298,3 +314,4 @@ function TableCaption({ className, ...props }: React.ComponentProps<"caption">) 
 }
 
 export { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow }
+export type { TableAlign }

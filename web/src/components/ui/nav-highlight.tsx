@@ -216,7 +216,8 @@ function composeRefs<T>(...refs: (React.Ref<T> | undefined)[]) {
 function WeightLabel({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
     <span data-slot="weight-label" className={cn("inline-grid min-w-0 grid-cols-[minmax(0,1fr)]", className)}>
-      <span className="col-start-1 row-start-1 min-w-0 truncate transition-[font-weight] duration-(--ds-dur-fast) ease-ds group-aria-[current=page]/nav:font-semibold group-aria-selected/nav:font-semibold group-data-[state=active]/nav:font-semibold">
+      {/* 字重 80ms；焦点由键盘移动时（键盘展开目录、方向键换标签）0ms */}
+      <span className="col-start-1 row-start-1 min-w-0 truncate transition-[font-weight] duration-(--ds-dur-fast) ease-ds group-aria-[current=page]/nav:font-semibold group-aria-selected/nav:font-semibold group-data-[state=active]/nav:font-semibold [:root:has(:focus-visible)_&]:transition-none">
         {children}
       </span>
       <span aria-hidden data-weight-ghost="" className="invisible col-start-1 row-start-1 min-w-0 truncate font-semibold">

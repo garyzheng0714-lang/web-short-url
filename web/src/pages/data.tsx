@@ -126,8 +126,7 @@ export function DataPage() {
         ),
       },
       // 文字列靠左在前，两个右对齐的数字列（创建时间、访问量）并排在后：右对齐的日期紧贴左对齐的状态会一边挤一边空
-      // 列宽：目标链接是唯一不定宽的列，吃剩下的宽（主栏 992 时约 224，比原来窄）；分组定宽 232 放得下常见分组名。
-      // 不定宽的列放在别处会被 SortableDataTable 量成 20px 左右，各列最小宽（非数字列 112）加起来也不能超过 992，否则整表变宽（已报 Su）
+      // 列宽：目标链接是唯一不定宽的列，吃剩下的宽（主栏 992 时约 224，用户要它短）；分组定宽 232 放得下常见分组名
       { key: "group", label: "分组", sortable: false, width: 232, render: (l) => <span className="block truncate">{l.group_name || "未分组"}</span> },
       { key: "status", label: "状态", sortable: false, width: 88, render: (l) => <LinkStatus status={l.status} /> },
       { key: "created", label: "创建时间", width: 96, align: "end", sortValue: (l) => l.created_at, render: (l) => <span className="tabular-nums">{fmtDateShort(l.created_at)}</span> },
@@ -262,7 +261,6 @@ export function DataPage() {
 
           {view === "list" ? (
             <SortableDataTable
-              key="links"
               caption="短链"
               flush
               rows={items}
@@ -282,9 +280,7 @@ export function DataPage() {
               }
             />
           ) : (
-            // 两张表各自一个实例：列宽是第一次有数据时量的，切换时不能沿用另一张表的
             <SortableDataTable
-              key="groups"
               caption="分组"
               flush
               rows={visibleGroups}
@@ -302,8 +298,7 @@ export function DataPage() {
                 第 {formatCount(from)}–{formatCount(to)} 条，共 {formatCount(total)} 条
               </span>
               {pages > 1 ? (
-                // 分页按自己的宽度切窄版（< 384 只留当前页附近）：让它占满剩下的宽，只把页码靠右
-                <Pagination className="min-w-0 flex-1 justify-end">
+                <Pagination align="end" className="flex-1">
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious aria-disabled={page === 1} onClick={(e) => (e.preventDefault(), page > 1 && update({ page: String(page - 1) }, true))} />

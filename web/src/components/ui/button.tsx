@@ -13,7 +13,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { useInvariant } from "@/components/ui/invariant"
 
 /**
- * 按钮：主、次、三级、无底、危险与危险确认 × 两档尺寸（md 36 / sm 28 带字，icon / icon-sm 纯图标；lg 暂等于 md）。默认 primary 墨色实底；一屏最多一个主动作，工具类操作用 ghost。
+ * 按钮：主、次、三级、无底、危险与危险确认 × 两档尺寸（md 36 / sm 28 带字，icon / icon-sm 纯图标；lg 暂等于 md）。默认 primary 墨色实底；一屏最多一个主动作，工具类操作用 ghost（工具条里的筛选、排序除外：它们是可拨的，用 SelectTrigger 的凹面，见 DESIGN.md §3.11）。
  * 外形（DESIGN.md §4.1）：primary 实底；secondary 透明叠色底（--ds-tint，跟着所在面变色，悬停 --ds-tint-hover）；tertiary 1px 环（平时在外，按下时转成内线）；
  *   ghost 无底；danger 白底红字加 1px 环；danger-confirm 红实底（只给确认面里的确认按钮）。字重 500。
  * 面（data-slot=button-surface）：底色画在比按钮内收 1px 的一层上，再用同色 1px 外扩阴影补回满尺寸。

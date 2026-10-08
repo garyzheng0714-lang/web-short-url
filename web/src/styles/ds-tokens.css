@@ -21,6 +21,14 @@
   --ds-page-wide: 1344px; /* 宽版：画布、三栏示例 */
   --ds-page-top: 104px; /* 顶栏下到页面标题字头 */
   --ds-page-bottom: 128px;
+  /* 应用页（Page width="app"，DESIGN.md §3.11）：数据表格、列表管理、仪表盘、设置铺满主区，小标题贴顶 */
+  --ds-page-app-top: 32px;
+  --ds-page-app-bottom: 48px;
+  /* 页头到下一块（工具条、表格、第一节）、节与节之间：一份 24（先例 Stripe 23、Notion 17；节标题到内容 12 × 2 ≤ 24，归属不含糊） */
+  --ds-page-app-gap: 24px;
+  /* 表格首尾格的内边距：平时 16；应用页 8——表格的边（行线、悬停底）落在标题线上，字缩进 8，和搜索框里放大镜的墨迹同一条线（先例 Stripe 8、Notion 9） */
+  --ds-table-edge: 16px;
+  --ds-table-edge-app: 8px;
   /* 布局区块的内容宽（实测参考站共用一套 12 列，容器只有这几档）：宽 1200 · 中 1040 · 窄 800；两侧留白窄屏 24、宽屏 48 */
   --ds-block-wide: 1200px;
   --ds-block-mid: 1040px;
