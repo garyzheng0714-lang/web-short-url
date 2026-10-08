@@ -257,6 +257,10 @@ await page.waitForTimeout(250);
 const copyHover = await copy0.evaluate((el) => getComputedStyle(el).opacity);
 check("复制按钮平时隐藏，指向这一行才出现", copyIdle === "0" && copyHover === "1", `${copyIdle} → ${copyHover}`);
 check("底栏写着第几条、共几条", /第 1–\d+ 条，共 [\d,]+ 条/.test((await page.locator("main section footer").first().textContent()) || ""));
+const footText = (await page.locator("main section footer").first().textContent()) || "";
+const lastPage = Math.ceil(Number((footText.match(/共 ([\d,]+) 条/)?.[1] || "0").replace(/,/g, "")) / 20);
+const shownPages = await page.getByRole("navigation", { name: "分页" }).evaluate((nav) => [...nav.querySelectorAll("li")].filter((li) => li.getClientRects().length && li.getBoundingClientRect().width > 0).map((li) => li.querySelector("[data-slot=pagination-link]")?.getAttribute("aria-label") || li.innerText.trim()).filter(Boolean));
+check("分页看得到首页和末页", lastPage <= 1 || (shownPages.some((t) => /(^|\D)1$/.test(t)) && shownPages.some((t) => new RegExp(`(^|\\D)${lastPage}$`).test(t))), `末页 ${lastPage} · ${shownPages.join(" ")}`);
 // 点表头排序：「访问」点两下是从多到少
 const visitsHead = table.locator("thead th", { hasText: "访问" }).getByRole("button");
 await visitsHead.click();

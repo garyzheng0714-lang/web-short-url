@@ -8,7 +8,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SortableDataTable, type DataColumn, type SortState } from "@/components/ui/sortable-data-table";
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { QrDialog } from "@/components/qr-dialog";
 import { LinkDrawer } from "@/components/link-drawer";
 import { GroupDrawer } from "@/components/group-drawer";
@@ -292,24 +292,29 @@ export function DataPage() {
         )}
 
         {view === "list" && total ? (
-          <footer className="flex flex-wrap items-center justify-between gap-3 text-sm text-fg-muted">
-            <span className="tabular-nums">
+          <footer className="flex items-center gap-3 text-sm text-fg-muted">
+            <span className="shrink-0 tabular-nums">
               第 {formatCount(from)}–{formatCount(to)} 条，共 {formatCount(total)} 条
             </span>
             {pages > 1 ? (
-              <Pagination className="mx-0 w-auto justify-end">
+              // 分页按自己的宽度切窄版（< 384 只留当前页附近）：让它占满剩下的宽，只把页码靠右
+              <Pagination className="min-w-0 flex-1 justify-end">
                 <PaginationContent>
                   <PaginationItem>
                     <PaginationPrevious aria-disabled={page === 1} onClick={(e) => (e.preventDefault(), page > 1 && update({ page: String(page - 1) }, true))} />
                   </PaginationItem>
-                  {pageWindow(page, pages).map((p, i, arr) => (
+                  {pageWindow(page, pages).flatMap((p, i, arr) => [
+                    i > 0 && arr[i - 1] !== p - 1 ? (
+                      <PaginationItem key={`gap-${p}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : null,
                     <PaginationItem key={p}>
-                      {i > 0 && arr[i - 1] !== p - 1 ? <span className="px-1 text-fg-subtle">…</span> : null}
                       <PaginationLink isActive={p === page} onClick={(e) => (e.preventDefault(), update({ page: String(p) }, true))}>
                         {p}
                       </PaginationLink>
-                    </PaginationItem>
-                  ))}
+                    </PaginationItem>,
+                  ])}
                   <PaginationItem>
                     <PaginationNext aria-disabled={page === pages} onClick={(e) => (e.preventDefault(), page < pages && update({ page: String(page + 1) }, true))} />
                   </PaginationItem>
