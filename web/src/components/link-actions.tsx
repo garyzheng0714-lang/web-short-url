@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Copy, Ellipsis, ExternalLink, Pause, Pencil, Play, QrCode, UserRoundPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -41,8 +40,7 @@ export async function claimLink(link: LinkItem, onChanged: (l: LinkItem) => void
   }
 }
 
-export function LinkRowMenu({ link, onChanged, onQr, onEdit }: { link: LinkItem; onChanged: (l: LinkItem) => void; onQr: (url: string) => void; onEdit: (l: LinkItem) => void }) {
-  const navigate = useNavigate();
+export function LinkRowMenu({ link, onChanged, onQr, onEdit, onOpen }: { link: LinkItem; onChanged: (l: LinkItem) => void; onQr: (url: string) => void; onEdit: (l: LinkItem) => void; onOpen: (l: LinkItem) => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -64,7 +62,7 @@ export function LinkRowMenu({ link, onChanged, onQr, onEdit }: { link: LinkItem;
           打开短链
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate(`/links/${link.id}`)}>查看数据</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onOpen(link)}>查看数据</DropdownMenuItem>
         {link.can_manage ? (
           <>
             <DropdownMenuItem onSelect={() => onEdit(link)}>

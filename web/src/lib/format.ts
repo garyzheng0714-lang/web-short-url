@@ -11,6 +11,15 @@ export function fmtDate(iso?: string | null) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "—" : zhDate.format(d).replaceAll("/", "-");
 }
+/** 今年只显示月-日，往年带年份 */
+export function fmtDateShort(iso?: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const full = zhDate.format(d).replaceAll("/", "-");
+  const thisYear = zhDate.format(new Date()).slice(0, 4);
+  return full.startsWith(thisYear) ? full.slice(5) : full;
+}
 export function fmtDateTime(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);

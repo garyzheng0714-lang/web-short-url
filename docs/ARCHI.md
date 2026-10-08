@@ -134,6 +134,10 @@ Express（server.js）
 
 `canManage(session, link)` 在 `lib/api.js`：管理员、创建者、分组归属人。管理员 = `users.role = 'admin'` 或 `feishu_open_id ∈ ADMIN_FEISHU_OPEN_IDS`；登录时若在环境变量名单里会把 `role` 持久化成 `admin`。
 
+### 每月额度
+
+`usageOf(open_id)`（`lib/api.js`）：本月（北京时间 1 日 0 点起）`links` 里 `creator_open_id = 本人 AND source = 'tool'` 的条数；认领来的不算。`POST /api/links` 先查额度，用完返回 403 `quota_exceeded`，前端弹「本月额度已用完」并给出可复制的申请文案。上限 = `users.monthly_quota` 或 `DEFAULT_MONTHLY_QUOTA`（默认 100），管理员在设置页用 `PATCH /api/users/:openId` 调整。
+
 ### 建链输入校验
 
 目标必须 http/https；分组必填；自定义后缀 `[A-Za-z0-9_-]{1,32}`；随机长度 4~8；「微信内强制浏览器打开」与「深度过滤机器访问」互斥；webhook 开启时场景值固定写 `shorturl:<open_id>`。
@@ -163,6 +167,7 @@ express.json(256kb) → cookieParser → feishuRouter(/auth/feishu/*)
 | 1 | 旧表 users / sessions / link_history + 兼容列 + 租户命名空间迁移（原 server.js 逻辑原样搬入） |
 | 2 | `users.role`；`xm_projects`、`xm_groups`、`links`、`link_stats_daily`、`group_stats_daily`、`chart_cache`、`visit_events`、`sync_runs`、`sync_state`、`user_settings` |
 | 3 | 合并裸 open_id 重复用户到 `fbif:` 前缀行（搬 sessions / link_history / links / xm_groups 外键）；`link_history` 并入 `links`（source `tool`，保留创建者） |
+| 4 | `users.monthly_quota`（NULL = 用 `DEFAULT_MONTHLY_QUOTA`） |
 
 ### 关键表
 
@@ -231,23 +236,24 @@ tick 默认 5 分钟，`SYNC_INITIAL_DELAY_MS` 后首跑。规模（2026-10-08 �
 
 ## 14. 前端页面与 UI 架构
 
-`web/` 独立工程；路由懒加载，每页一个 chunk。外框 `Split`：左 `SplitPane width=228` 导航（短链 / 概览 / 分组 / 设置 + 用户与退出），右主区白卡，内部滚动；窄于 1024 时侧栏让位，顶部一行同样的入口。
+`web/` 独立工程，两页：`/`（工作页）与 `/settings`。没有侧栏：顶栏只有站名与头像菜单（设置、退出），内容一列居中（`max-w-5xl`，左右 24）。2026-10-08 用户裁定：首页只放一个生成框；概览、列表、分组合在一页，用视图切换；详情一律右侧抽屉。
 
-| 页 | 组成 |
+| 区块 | 组成 |
 | --- | --- |
-| 短链 `/` | `CreateLink`（Input + 域名 Select + 主按钮；分组 ghost Select；「更多选项」收起名称 / 后缀 / 长度 / 三个 Switch；成功后结果条：复制 / 二维码 / 打开）→ 范围 `Segmented` + `FilterToolbar`（分组 / 状态 / 域名 + 搜索）→ `SortableDataTable`（短链、目标、分组、创建者、创建、累计访问、近 7 天 `Sparkline`、状态 `Tag`、行尾 `⋯` 菜单）→ `Pagination` |
-| 详情 `/links/:id` | 头部（短链 + 复制 + 状态、目标、名称 / 分组 / 创建者或「认领」/ 时间）、动作（二维码、跳转链路、打开、编辑 `Drawer`、暂停 / 恢复）、`RangeSegmented` + 含机器访问 `Switch`、四张 `MetricCard`、`StatsPanel`、访问记录表 |
-| 概览 `/overview` | 范围与分组 ghost Select、时间 `Segmented`、指标卡（点「访问 / 访客」切换主图）、`LineChart`、访问最多 / 最近创建两张表、实时访问（有 webhook 事件时） |
-| 分组 | `SortableDataTable`，归属人列管理员为 inline Select；详情页复用 `StatsPanel` |
-| 设置 | 个人默认值（即时保存）、账号；管理员：同步状态与手动触发、小码额度与白名单、成员 |
+| 生成 | 标题 +「输入框 + 主按钮」一行（同高同顶）+ 状态行（默认域名 · 默认分组 · 本月已生成 x / y 条，出错时换成错误）；成功后结果条：复制 / 二维码 / 打开。超额弹 `QuotaDialog` |
+| 对比图 | `components/explainers.tsx`：两组「之前 ✕ / 之后 ✓」聊天界面，全部用设计变量绘制，不用位图；窄容器时前后上下排 |
+| 数据区 | 工具条：视图 `Segmented`（列表 / 分组）、范围 `Select`（全部 / 我的）、分组筛选的可取消按钮、`SearchField`；三张 `MetricCard`（近 30 天访问带趋势与较上期、今日访问、短链数），随范围与分组变化 |
+| 列表视图 | `Table flush`：短链（域名灰 + 后缀，下行名称 · 目标）、分组、累计访问（可排序）、近 7 天 `Sparkline`、创建（可排序）、行尾 `⋯`。整行可点开抽屉；列按数据区容器宽度收起（< 768 收分组，< 576 收趋势，< 448 收创建） |
+| 分组视图 | `Table flush`：分组、短链、被访问、累计访问、归属人；点行开分组抽屉 |
+| 短链抽屉 | `LinkDrawer` + `LinkDetail`：元信息与认领、操作（复制、二维码、打开、跳转链路、编辑、暂停 / 恢复）、时间范围与含机器访问、四张指标卡、`StatsPanel`、访问记录分页 |
+| 分组抽屉 | `GroupDrawer`：归属人（管理员可改）、「查看组内短链」（回到列表并按分组筛选）、指标卡、`StatsPanel` |
+| 设置 | 默认域名 / 分组 / 默认排除机器访问（抽屉的初始值）；管理员：同步状态与手动触发、小码额度、成员与每月额度（预设档位 Select） |
 
-`StatsPanel`：每日 `LineChart`（访问 / 访客虚线）、24 小时 `BarChart`、设备 `DonutChart`、系统 / 浏览器 / 网络 / 来源 / 地区 / 国家或高频 IP 表格。
-
----
+抽屉宽 768（`max-w-3xl`），打开时焦点落在关闭按钮；状态都写在查询串里，刷新可恢复。
 
 ## 15. 前端状态
 
-无状态库。`BootstrapProvider` 持有 `/api/bootstrap`；页面各自用 `useState` + `useEffect` 拉数据；列表页的筛选 / 排序 / 分页同步到 URL 查询串（刷新可恢复）；`sessionStorage` 只放 session token。
+无状态库。`BootstrapProvider` 持有 `/api/bootstrap`（含本月用量）；首页的视图、范围、筛选、排序、分页、打开的抽屉全部同步到 URL 查询串（刷新可恢复）；`sessionStorage` 只放 session token。
 
 ---
 

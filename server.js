@@ -282,6 +282,7 @@ if (xm && sync) {
       requireAuth,
       adminFeishuIds: ADMIN_FEISHU_OPEN_IDS,
       webhook: { token: process.env.XIAOMARK_WEBHOOK_TOKEN?.trim() || "", relayUrl: process.env.WEBHOOK_RELAY_URL?.trim() || "" },
+      quota: { defaultMonthly: Number.parseInt(process.env.DEFAULT_MONTHLY_QUOTA || "100", 10), contactName: process.env.QUOTA_CONTACT_NAME?.trim() || "Gary" },
       log,
     })
   );

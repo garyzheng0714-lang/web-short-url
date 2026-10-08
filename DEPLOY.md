@@ -21,6 +21,8 @@ PORT=3010
 XIAOMARK_API_KEY=
 SYNC_ENABLED=true
 ADMIN_FEISHU_OPEN_IDS=            # 管理员飞书 open_id，逗号分隔
+DEFAULT_MONTHLY_QUOTA=100         # 可选：每人每月可新建条数
+QUOTA_CONTACT_NAME=Gary           # 可选：额度用完时的联系人
 XIAOMARK_WEBHOOK_TOKEN=           # 接 webhook 时填
 WEBHOOK_RELAY_URL=                # 可选：转发到原接收方
 FEISHU_FBIF_APP_ID=
@@ -64,7 +66,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://shorturl.garyzheng.com/
 
 ## 7. 真人验收
 
-1. 普通浏览器飞书登录 → 进入 `/`，列表有数据、生成一条测试短链到「短链测试」分组、二维码、详情图表。
+1. 普通浏览器飞书登录 → 进入 `/`，生成一条测试短链、点行打开抽屉看图表、切到分组视图点开分组抽屉。
 2. 飞书客户端内打开 → 免登 → 同样检查。
 3. 管理员账号：设置页能看到同步状态与小码额度；分组页能改归属。
 4. 非管理员账号：设置页没有管理区；无法编辑别人的短链；可认领无主短链。

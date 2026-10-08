@@ -6,9 +6,10 @@
 
 ## 能力
 
-- **生成短链**：粘贴长链接，选域名（自有域名 t.fbif.com / t.foodtalks.cn）与分组，可选名称、自定义后缀、随机长度、机器过滤、微信内打开、事件推送。
+- **生成短链**：首页一个输入框，粘贴长链接即生成；域名与分组用个人设置里的默认值。每人每月默认 100 条（认领来的不算），用完弹窗提示联系 Gary，管理员可在设置页单独调额度。
+- **讲清用途**：首页两张「之前 ✕ / 之后 ✓」对比图：聊天里长链接 vs 短链；换页面后要重发新链接 vs 后台改跳转。
 - **全量镜像**：定时把小码账号里的项目、分组、全部短链（约 1 万条）同步到本地，列表、搜索、筛选、排序都走本地库。
-- **效果仪表盘**：短链详情（每日访问、24 小时分布、设备、系统、浏览器、网络、地区、来源、高频 IP、访问记录）、分组详情、团队概览（指标卡、每日折线、访问最多、最近创建）。
+- **效果仪表盘**：首页数据区一块：近 30 天访问 / 今日访问 / 短链数，下面「列表 / 分组」两种视图切换。点短链或分组在右侧抽屉看详情（每日访问、24 小时分布、设备、系统、浏览器、网络、地区、来源、高频 IP、访问记录）。
 - **归属**：本工具建的短链自动记创建者；历史短链可认领；管理员可把分组指定给某人；「我的」范围 = 我创建的 + 我名下分组里的。
 - **管理**：编辑目标链接与名称、暂停 / 恢复跳转、二维码、跳转链路解析；管理员可看同步状态、小码额度与白名单、成员列表。
 - **Webhook（可选）**：接收小码访问事件推送（验签、去重），可原样转发给原有接收方。
@@ -33,11 +34,9 @@ Express（server.js）
 
 | 路径 | 内容 |
 | --- | --- |
-| `/` | 短链：生成区 + 可筛选排序的列表（全部 / 我的、分组、状态、域名、搜索），行尾操作 |
-| `/links/:id` | 短链详情与数据 |
-| `/overview` | 概览：范围（全部 / 我的）、分组、近 7 / 30 / 90 天 |
-| `/groups`、`/groups/:id` | 分组列表（管理员可指定归属）与分组数据 |
-| `/settings` | 默认域名 / 分组 / 机器过滤；管理员：同步状态、小码额度、成员 |
+| `/` | 唯一的工作页：生成框 → 两张对比图 → 数据区（概览数字 + 列表 / 分组视图 + 搜索 + 全部 / 我的）。查询串 `view=groups`、`scope=mine`、`group=`、`q=`、`sort=`、`page=`；`link=<id>` 打开短链抽屉，`g=<分组 id>` 打开分组抽屉 |
+| `/settings` | 默认域名 / 分组 / 机器过滤；管理员：同步状态、小码额度、成员与每月额度 |
+| `/links/:id`、`/groups`、`/groups/:id`、`/overview` | 旧地址，重定向到 `/` 对应的视图或抽屉 |
 | `/login` | 飞书登录页（静态 `public/login.html`） |
 
 ## API
@@ -51,7 +50,8 @@ Express（server.js）
 | GET | `/api/bootstrap` | 当前用户、域名、分组、默认值、额度、同步摘要 |
 | GET | `/api/links` | 列表：`scope`、`group`、`status`、`domain`、`q`、`sort`、`page`、`page_size` |
 | GET | `/api/links/trends?ids=` | 列表里的 7 日迷你趋势（最多 50 条） |
-| POST | `/api/links` | 建链 |
+| POST | `/api/links` | 建链（超出本月额度返回 403 `quota_exceeded`） |
+| GET | `/api/usage` | 本月用量：`used`、`limit`、`remaining`、`contact` |
 | GET / PATCH | `/api/links/:id` | 详情 / 编辑（创建者、分组归属人或管理员） |
 | POST | `/api/links/:id/suspend`、`/resume`、`/claim` | 暂停、恢复、认领（管理员可传 `open_id` 改派） |
 | GET | `/api/links/:id/stats` | 累计、期间、每日序列、多维分布；`range=7d|30d|90d` 或 `start&end`，`bot=include` 含机器 |
@@ -60,7 +60,8 @@ Express（server.js）
 | GET / POST | `/api/groups` | 分组列表 / 新建 |
 | GET | `/api/groups/:id/stats` | 分组数据 |
 | PATCH | `/api/groups/:id` | 归属人、改名（管理员） |
-| GET | `/api/users` | 成员 |
+| GET | `/api/users` | 成员（含本月用量与额度） |
+| PATCH | `/api/users/:openId` | 调整某人每月额度 `monthly_quota`，`null` 恢复默认（管理员） |
 | GET / PUT | `/api/settings` | 个人默认值 |
 | GET / POST | `/api/admin/sync`、`/api/admin/sync/run` | 同步状态 / 手动触发（管理员） |
 | GET | `/api/admin/quota` | 小码额度、白名单、自有域名（管理员） |
@@ -78,6 +79,8 @@ Express（server.js）
 | `XIAOMARK_WEBHOOK_TOKEN` | 否 | 小码后台设置的签名 token；留空则不开 webhook 接口 |
 | `WEBHOOK_RELAY_URL` | 否 | 收到的事件转发地址 |
 | `ADMIN_FEISHU_OPEN_IDS` | 推荐 | 管理员飞书 open_id，逗号分隔 |
+| `DEFAULT_MONTHLY_QUOTA` | 否 | 每人每月可新建条数，默认 100 |
+| `QUOTA_CONTACT_NAME` | 否 | 额度用完时弹窗里的联系人，默认 Gary |
 | `DB_PATH` | 否 | SQLite 路径，默认 `shorturl.db` |
 | `ALLOWED_GO_HOSTS` | 否 | `/go` 额外允许的域名 |
 | `FEISHU_FBIF_APP_ID` / `_SECRET` / `FEISHU_REDIRECT_BASE` | 是 | 飞书登录 |

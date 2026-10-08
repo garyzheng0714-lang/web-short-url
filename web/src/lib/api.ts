@@ -59,6 +59,23 @@ export interface LinkItem {
   can_manage: boolean;
   is_mine: boolean;
 }
+export interface Usage {
+  used: number;
+  limit: number;
+  remaining: number;
+  month: string;
+  contact: string;
+}
+export interface Member {
+  open_id: string;
+  name: string;
+  avatar_url: string | null;
+  is_admin: boolean;
+  tenant_key: string;
+  monthly_quota: number | null;
+  used_this_month: number;
+  limit: number;
+}
 export interface GroupMeta {
   id: string;
   name: string;
@@ -77,6 +94,7 @@ export interface Bootstrap {
   projects: { id: string; name: string }[];
   defaults: { key_length: number; advanced_bot_detection: boolean; webhook: boolean; escape_from_wechat: boolean };
   quota: { link_quota: number } | null;
+  usage: Usage;
   sync: { links: { total: number; live: number; with_stats: number; pending_stats: number; attributed: number } | null; inventory_at: string | null; pending_stats: number };
   today: string;
 }
@@ -221,7 +239,8 @@ export const api = {
   bootstrap: () => request<Bootstrap>("/api/bootstrap"),
   listLinks: (p: ListLinksParams) => request<ListLinksResult>(`/api/links${qs(p)}`),
   trends: (ids: number[]) => request<{ start: string; end: string; trends: Record<string, number[]> }>(`/api/links/trends?ids=${ids.join(",")}`),
-  createLink: (body: CreateLinkBody) => request<{ link: LinkItem }>("/api/links", { method: "POST", body: JSON.stringify(body) }),
+  createLink: (body: CreateLinkBody) => request<{ link: LinkItem; usage: Usage }>("/api/links", { method: "POST", body: JSON.stringify(body) }),
+  usage: () => request<Usage>("/api/usage"),
   getLink: (id: number) => request<{ link: LinkItem }>(`/api/links/${id}`),
   updateLink: (id: number, patch: Partial<{ name: string; target_url: string; escape_from_wechat: boolean; advanced_bot_detection: boolean; webhook: boolean }>) =>
     request<{ link: LinkItem }>(`/api/links/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
@@ -235,7 +254,8 @@ export const api = {
   createGroup: (name: string, project_id?: string) => request<{ group: { id: string; name: string; project_id: string } }>("/api/groups", { method: "POST", body: JSON.stringify({ name, project_id }) }),
   groupStats: (id: string, p: RangeParams) => request<GroupStats>(`/api/groups/${encodeURIComponent(id)}/stats${qs(p)}`),
   updateGroup: (id: string, patch: { owner_open_id?: string | null; name?: string }) => request<{ group: { id: string; name: string; owner: Person | null } }>(`/api/groups/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  users: () => request<{ items: { open_id: string; name: string; avatar_url: string | null; is_admin: boolean; tenant_key: string }[] }>("/api/users"),
+  users: () => request<{ default_monthly_quota: number; items: Member[] }>("/api/users"),
+  updateUser: (openId: string, patch: { monthly_quota: number | null }) => request<Usage & { open_id: string; monthly_quota: number | null }>(`/api/users/${encodeURIComponent(openId)}`, { method: "PATCH", body: JSON.stringify(patch) }),
   settings: () => request<{ settings: Bootstrap["settings"] }>("/api/settings"),
   saveSettings: (s: Partial<Bootstrap["settings"]>) => request<{ settings: Bootstrap["settings"] }>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   syncStatus: () => request<SyncStatus>("/api/admin/sync"),

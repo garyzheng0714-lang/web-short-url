@@ -11,7 +11,7 @@ const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "shorturl-te
 test("全新库：三个版本的迁移跑完，再次打开不再重复执行", () => {
   const file = tmpDb();
   const first = openDatabase(file);
-  assert.deepEqual(first.migrationsRan, [1, 2, 3]);
+  assert.deepEqual(first.migrationsRan, [1, 2, 3, 4]);
   const tables = first.db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`).all().map((r) => r.name);
   for (const t of ["users", "sessions", "links", "xm_groups", "link_stats_daily", "group_stats_daily", "chart_cache", "visit_events", "sync_runs", "sync_state", "user_settings", "schema_migrations"]) {
     assert.ok(tables.includes(t), `缺少表 ${t}`);
@@ -41,7 +41,7 @@ test("老库：裸 open_id 用户并入 fbif: 前缀行，link_history 并入 li
   raw.close();
 
   const { db, migrationsRan } = openDatabase(file);
-  assert.deepEqual(migrationsRan, [1, 2, 3]);
+  assert.deepEqual(migrationsRan, [1, 2, 3, 4]);
   const users = db.prepare(`SELECT open_id, role FROM users ORDER BY open_id`).all();
   assert.deepEqual(users, [{ open_id: "fbif:ou_abc", role: "member" }]);
   assert.equal(db.prepare(`SELECT open_id FROM sessions WHERE token = 't1'`).get().open_id, "fbif:ou_abc", "session 外键跟着搬");
@@ -50,5 +50,12 @@ test("老库：裸 open_id 用户并入 fbif: 前缀行，link_history 并入 li
     { link_url: "https://t.fbif.com/old1", domain: "t.fbif.com", creator_open_id: "fbif:ou_abc", source: "tool", name: "" },
     { link_url: "https://t.fbif.com/old2", domain: "t.fbif.com", creator_open_id: "fbif:ou_abc", source: "tool", name: "活动页" },
   ]);
+  db.close();
+});
+
+test("v4：users.monthly_quota 默认为空（走默认额度）", () => {
+  const { db } = openDatabase(tmpDb());
+  db.prepare(`INSERT INTO users (open_id, name) VALUES ('fbif:ou_x', 'x')`).run();
+  assert.equal(db.prepare(`SELECT monthly_quota FROM users WHERE open_id = 'fbif:ou_x'`).get().monthly_quota, null);
   db.close();
 });

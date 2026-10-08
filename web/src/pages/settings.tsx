@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,9 +60,15 @@ export function SettingsPage() {
   const domains = [...new Set([...boot.domains.map((d) => d.domain), boot.default_domain_fallback])];
 
   return (
-    <div className="grid gap-10 px-6 pb-10">
-      <div className="flex h-(--ds-header-h) shrink-0 items-center">
-        <h2 className="text-base font-semibold">设置</h2>
+    <div className="grid gap-10 pt-6">
+      <div className="grid justify-items-start gap-2">
+        <Button asChild variant="ghost" size="sm" className="edge-start">
+          <Link to="/">
+            <ArrowLeft aria-hidden />
+            返回
+          </Link>
+        </Button>
+        <h1 className="text-2xl font-semibold">设置</h1>
       </div>
 
       <section className="grid max-w-xl gap-6" aria-labelledby="s-defaults">
@@ -96,9 +105,9 @@ export function SettingsPage() {
               ))}
             </SelectContent>
           </Select>
-          <FieldDescription>每次打开生成区时预选的分组</FieldDescription>
+          <FieldDescription>首页生成的短链放进这个分组</FieldDescription>
         </Field>
-        <Switch label="统计默认排除机器访问" checked={settings.exclude_bot} onCheckedChange={(v) => void save({ exclude_bot: v })} />
+        <Switch label="看数据时默认排除机器访问" checked={settings.exclude_bot} onCheckedChange={(v) => void save({ exclude_bot: v })} />
       </section>
 
       <section className="grid gap-3" aria-labelledby="s-account">
@@ -109,7 +118,9 @@ export function SettingsPage() {
           <Avatar name={boot.user.name || "用户"} src={boot.user.avatar_url || undefined} size={32} shape="circle" />
           <div className="grid">
             <span className="text-sm text-fg">{boot.user.name}</span>
-            <span className="text-xs text-fg-muted">{boot.user.is_admin ? "管理员" : "成员"} · 租户 {boot.user.tenant_key}</span>
+            <span className="text-xs text-fg-muted tabular-nums">
+              {boot.user.is_admin ? "管理员" : "成员"} · 本月已生成 {boot.usage.used} / {boot.usage.limit} 条
+            </span>
           </div>
         </div>
       </section>
@@ -202,7 +213,8 @@ export function SettingsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>成员</TableHead>
-                  <TableHead className="w-40">租户</TableHead>
+                  <TableHead className="w-28 text-right">本月已生成</TableHead>
+                  <TableHead className="w-36">每月额度</TableHead>
                   <TableHead className="w-24">角色</TableHead>
                 </TableRow>
               </TableHeader>
@@ -215,7 +227,33 @@ export function SettingsPage() {
                         {u.name}
                       </span>
                     </TableCell>
-                    <TableCell className="text-fg-muted">{u.tenant_key || "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{u.used_this_month}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={String(u.limit)}
+                        onValueChange={async (v) => {
+                          try {
+                            const r = await api.updateUser(u.open_id, { monthly_quota: Number(v) });
+                            setUsers((list) => list.map((x) => (x.open_id === u.open_id ? { ...x, monthly_quota: r.monthly_quota, limit: r.limit } : x)));
+                            toast.success(`${u.name} 的每月额度改为 ${r.limit} 条`);
+                            if (u.open_id === boot.user.open_id) void refresh();
+                          } catch (e) {
+                            toast.error(e instanceof ApiError ? e.message : "保存失败");
+                          }
+                        }}
+                      >
+                        <SelectTrigger aria-label={`${u.name} 的每月额度`} className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[...new Set([u.limit, 50, 100, 200, 500, 1000, 5000])].sort((a, b) => a - b).map((n) => (
+                            <SelectItem key={n} value={String(n)}>
+                              {n} 条
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell>{u.is_admin ? <Tag variant="chip">管理员</Tag> : <span className="text-fg-muted">成员</span>}</TableCell>
                   </TableRow>
                 ))}
