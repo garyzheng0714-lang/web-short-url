@@ -223,6 +223,18 @@ const heads = (await table.locator("thead th").allTextContents()).map((t) => t.t
 check("短链以表格呈现、有表头", (await rows.count()) > 0 && ["短链", "目标链接", "分组", "创建时间", "状态", "访问"].every((h) => heads.some((x) => x.startsWith(h))), `${await rows.count()} 行 · ${heads.filter(Boolean).join(" / ")}`);
 const wrapper = await table.evaluate((el) => { for (let n = el.parentElement; n && n.tagName !== "MAIN"; n = n.parentElement) { const cs = getComputedStyle(n); if (cs.boxShadow !== "none" || cs.backgroundColor !== "rgba(0, 0, 0, 0)") return n.className.slice(0, 60); } return ""; });
 check("表格不套卡片，直接放在内容面上", !wrapper, wrapper || "无外框");
+const order = ["短链", "目标链接", "分组", "状态", "创建时间", "访问量"];
+check("表头顺序：文字列在前，两个数字列（创建时间、访问量）并排在后", order.every((h, i) => heads[i]?.startsWith(h)) && heads[5] === "访问量", heads.filter(Boolean).join(" / "));
+const colW = await table.locator("col").evaluateAll((cs) => cs.map((c) => Math.round(c.getBoundingClientRect().width)));
+// flush 的表格向两侧各出血 8：量 <table> 本身，看列宽合计有没有超出它（超出就是被各列最小宽撑宽了）
+const tableW = (await box(table.locator("table"))).width;
+check("目标链接列收窄（≤ 232），分组比它宽，表格不超出主栏", colW[1] <= 232 && colW[2] > colW[1] && colW.reduce((a, b) => a + b, 0) <= tableW + 1, `${colW.join(" / ")} · 表宽 ${tableW}`);
+const vgap = await page.evaluate(() => {
+  const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+  const tabs = r("main [role=tablist]"), bar = r("main [role=toolbar]"), head = r("main [data-slot=sortable-data-table] thead");
+  return { tabs: Math.round(bar.top - tabs.bottom), bar: Math.round(head.top - bar.bottom) };
+});
+check("标签栏到工具条、工具条到表头都是 16", Math.abs(vgap.tabs - 16) <= 4.5 && Math.abs(vgap.bar - 16) <= 0.5, `${vgap.tabs} / ${vgap.bar}`);
 check("「短链 / 分组」是页头下的标签页", (await page.getByRole("tab", { name: "短链" }).getAttribute("aria-selected")) === "true" && (await page.getByRole("tab", { name: "分组" }).count()) === 1);
 const tools = await page.locator("[role=toolbar][aria-label=筛选]").evaluate((el) => [...el.querySelectorAll("[data-slot=search-field], button[role=combobox]")].map((c) => { const shape = c.matches(".rounded-control") ? c : c.querySelector(".rounded-control") || c; const r = shape.getBoundingClientRect(); return { h: Math.round(r.height), radius: getComputedStyle(shape).borderTopLeftRadius }; }));
 check("工具条里的搜索、分组、状态同高同圆角", tools.length === 3 && tools.every((t) => t.h === tools[0].h && t.radius === tools[0].radius), tools.map((t) => `${t.h}/${t.radius}`).join(" · "));

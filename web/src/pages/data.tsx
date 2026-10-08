@@ -105,7 +105,7 @@ export function DataPage() {
         key: "link",
         label: "短链",
         sortable: false,
-        width: 232,
+        width: 216,
         render: (l) => (
           <span className="flex min-w-0 items-center gap-1">
             <button type="button" className={OPEN} onClick={() => openLink(l)}>
@@ -125,10 +125,13 @@ export function DataPage() {
           </span>
         ),
       },
-      { key: "group", label: "分组", sortable: false, width: 168, render: (l) => <span className="block truncate">{l.group_name || "未分组"}</span> },
+      // 文字列靠左在前，两个右对齐的数字列（创建时间、访问量）并排在后：右对齐的日期紧贴左对齐的状态会一边挤一边空
+      // 列宽：目标链接是唯一不定宽的列，吃剩下的宽（主栏 992 时约 224，比原来窄）；分组定宽 232 放得下常见分组名。
+      // 不定宽的列放在别处会被 SortableDataTable 量成 20px 左右，各列最小宽（非数字列 112）加起来也不能超过 992，否则整表变宽（已报 Su）
+      { key: "group", label: "分组", sortable: false, width: 232, render: (l) => <span className="block truncate">{l.group_name || "未分组"}</span> },
+      { key: "status", label: "状态", sortable: false, width: 88, render: (l) => <LinkStatus status={l.status} /> },
       { key: "created", label: "创建时间", width: 96, align: "end", sortValue: (l) => l.created_at, render: (l) => <span className="tabular-nums">{fmtDateShort(l.created_at)}</span> },
-      { key: "status", label: "状态", sortable: false, width: 80, render: (l) => <LinkStatus status={l.status} /> },
-      { key: "visits", label: "访问", width: 80, numeric: true, sortValue: (l) => l.stats.visit_count, render: (l) => formatCount(l.stats.visit_count) },
+      { key: "visits", label: "访问量", width: 88, numeric: true, sortValue: (l) => l.stats.visit_count, render: (l) => formatCount(l.stats.visit_count) },
       {
         key: "actions",
         label: "",
@@ -163,7 +166,7 @@ export function DataPage() {
       ...(hasOwner ? [{ key: "owner", label: "归属人", width: 160, sortValue: (g: GroupItem) => g.owner?.name || "", render: (g: GroupItem) => <span className="block truncate">{g.owner?.name || "—"}</span> }] : []),
       { key: "link_count", label: "短链", width: 96, numeric: true, render: (g) => formatCount(g.link_count) },
       { key: "visited_links", label: "被访问过", width: 104, numeric: true, render: (g) => formatCount(g.visited_links) },
-      { key: "visits", label: "访问", width: 104, numeric: true, render: (g) => formatCount(g.visits) },
+      { key: "visits", label: "访问量", width: 104, numeric: true, render: (g) => formatCount(g.visits) },
     ],
     [openGroup, hasOwner]
   );
@@ -203,129 +206,132 @@ export function DataPage() {
         ) : null}
       </header>
 
-      <Tabs value={view} onValueChange={(v) => update({ view: v === "groups" ? "groups" : null, group: null, status: null })}>
-        <TabsList aria-label="对象">
-          <TabsTrigger value="list">短链</TabsTrigger>
-          <TabsTrigger value="groups">分组</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* 标签栏到下面的内容 16（Su Tabs），工具条到表格同样 16 */}
+      <div className="grid gap-4">
+        <Tabs value={view} onValueChange={(v) => update({ view: v === "groups" ? "groups" : null, group: null, status: null })}>
+          <TabsList aria-label="对象">
+            <TabsTrigger value="list">短链</TabsTrigger>
+            <TabsTrigger value="groups">分组</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-      <section aria-label={view === "list" ? "短链" : "分组"} className="grid gap-4">
-        <div role="toolbar" aria-label="筛选" className="flex flex-wrap items-center gap-2">
-          <SearchField
-            className="w-full @xl/data:w-72"
-            placeholder={view === "list" ? "搜索短链、目标或名称" : "搜索分组"}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onQueryChange={(v) => view === "list" && update({ q: v || null })}
-          />
-          {view === "list" ? (
-            <>
-              <Select value={group || ALL} onValueChange={(v) => update({ group: v === ALL ? null : v })}>
-                <SelectTrigger aria-label="分组" className="w-44">
-                  <SelectValue>{group ? groupName : "全部分组"}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>全部分组</SelectItem>
-                  {boot.groups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={status || ALL} onValueChange={(v) => update({ status: v === ALL ? null : v })}>
-                <SelectTrigger aria-label="状态" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_ITEMS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {filtered ? (
-                <Button variant="ghost" onClick={clearFilters}>
-                  清除筛选
-                </Button>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-
-        {view === "list" ? (
-          <SortableDataTable
-            key="links"
-            caption="短链"
-            flush
-            rows={items}
-            columns={linkColumns}
-            rowKey="id"
-            sort={{ key: sortKey, direction: sortDir }}
-            onSortChange={(s: SortState) => update({ sort: SERVER_SORT[`${s.key}:${s.direction}`] === "created" ? null : SERVER_SORT[`${s.key}:${s.direction}`] || null })}
-            status={state === "error" ? "error" : state === "loading" ? "loading" : "ready"}
-            onRetry={() => void load()}
-            errorTitle="没能加载短链"
-            empty={
-              <EmptyState
-                title={filtered ? "没有匹配的短链" : "还没有短链"}
-                description={filtered ? undefined : "去「生成短链」粘贴一条长链接"}
-                action={filtered ? <Button onClick={clearFilters}>清除筛选</Button> : null}
-              />
-            }
-          />
-        ) : (
-          // 两张表各自一个实例：列宽是第一次有数据时量的，切换时不能沿用另一张表的
-          <SortableDataTable
-            key="groups"
-            caption="分组"
-            flush
-            rows={visibleGroups}
-            columns={groupColumns}
-            rowKey="id"
-            defaultSort={{ key: "visits", direction: "desc" }}
-            status={groups === null ? "loading" : "ready"}
-            empty={<EmptyState title={text ? `没有找到「${text}」` : "还没有分组"} />}
-          />
-        )}
-
-        {view === "list" && total ? (
-          <footer className="flex items-center gap-3 text-sm text-fg-muted">
-            <span className="shrink-0 tabular-nums">
-              第 {formatCount(from)}–{formatCount(to)} 条，共 {formatCount(total)} 条
-            </span>
-            {pages > 1 ? (
-              // 分页按自己的宽度切窄版（< 384 只留当前页附近）：让它占满剩下的宽，只把页码靠右
-              <Pagination className="min-w-0 flex-1 justify-end">
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious aria-disabled={page === 1} onClick={(e) => (e.preventDefault(), page > 1 && update({ page: String(page - 1) }, true))} />
-                  </PaginationItem>
-                  {pageWindow(page, pages).flatMap((p, i, arr) => [
-                    i > 0 && arr[i - 1] !== p - 1 ? (
-                      <PaginationItem key={`gap-${p}`}>
-                        <PaginationEllipsis />
-                      </PaginationItem>
-                    ) : null,
-                    <PaginationItem key={p}>
-                      <PaginationLink isActive={p === page} onClick={(e) => (e.preventDefault(), update({ page: String(p) }, true))}>
-                        {p}
-                      </PaginationLink>
-                    </PaginationItem>,
-                  ])}
-                  <PaginationItem>
-                    <PaginationNext aria-disabled={page === pages} onClick={(e) => (e.preventDefault(), page < pages && update({ page: String(page + 1) }, true))} />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
+        <section aria-label={view === "list" ? "短链" : "分组"} className="grid gap-4">
+          <div role="toolbar" aria-label="筛选" className="flex flex-wrap items-center gap-2">
+            <SearchField
+              className="w-full @xl/data:w-72"
+              placeholder={view === "list" ? "搜索短链、目标或名称" : "搜索分组"}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onQueryChange={(v) => view === "list" && update({ q: v || null })}
+            />
+            {view === "list" ? (
+              <>
+                <Select value={group || ALL} onValueChange={(v) => update({ group: v === ALL ? null : v })}>
+                  <SelectTrigger aria-label="分组" className="w-44">
+                    <SelectValue>{group ? groupName : "全部分组"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>全部分组</SelectItem>
+                    {boot.groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={status || ALL} onValueChange={(v) => update({ status: v === ALL ? null : v })}>
+                  <SelectTrigger aria-label="状态" className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_ITEMS.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {filtered ? (
+                  <Button variant="ghost" onClick={clearFilters}>
+                    清除筛选
+                  </Button>
+                ) : null}
+              </>
             ) : null}
-          </footer>
-        ) : view === "groups" && groups?.length ? (
-          <footer className="text-sm text-fg-muted tabular-nums">共 {formatCount(visibleGroups.length)} 个分组</footer>
-        ) : null}
-      </section>
+          </div>
+
+          {view === "list" ? (
+            <SortableDataTable
+              key="links"
+              caption="短链"
+              flush
+              rows={items}
+              columns={linkColumns}
+              rowKey="id"
+              sort={{ key: sortKey, direction: sortDir }}
+              onSortChange={(s: SortState) => update({ sort: SERVER_SORT[`${s.key}:${s.direction}`] === "created" ? null : SERVER_SORT[`${s.key}:${s.direction}`] || null })}
+              status={state === "error" ? "error" : state === "loading" ? "loading" : "ready"}
+              onRetry={() => void load()}
+              errorTitle="没能加载短链"
+              empty={
+                <EmptyState
+                  title={filtered ? "没有匹配的短链" : "还没有短链"}
+                  description={filtered ? undefined : "去「生成短链」粘贴一条长链接"}
+                  action={filtered ? <Button onClick={clearFilters}>清除筛选</Button> : null}
+                />
+              }
+            />
+          ) : (
+            // 两张表各自一个实例：列宽是第一次有数据时量的，切换时不能沿用另一张表的
+            <SortableDataTable
+              key="groups"
+              caption="分组"
+              flush
+              rows={visibleGroups}
+              columns={groupColumns}
+              rowKey="id"
+              defaultSort={{ key: "visits", direction: "desc" }}
+              status={groups === null ? "loading" : "ready"}
+              empty={<EmptyState title={text ? `没有找到「${text}」` : "还没有分组"} />}
+            />
+          )}
+
+          {view === "list" && total ? (
+            <footer className="flex items-center gap-3 text-sm text-fg-muted">
+              <span className="shrink-0 tabular-nums">
+                第 {formatCount(from)}–{formatCount(to)} 条，共 {formatCount(total)} 条
+              </span>
+              {pages > 1 ? (
+                // 分页按自己的宽度切窄版（< 384 只留当前页附近）：让它占满剩下的宽，只把页码靠右
+                <Pagination className="min-w-0 flex-1 justify-end">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious aria-disabled={page === 1} onClick={(e) => (e.preventDefault(), page > 1 && update({ page: String(page - 1) }, true))} />
+                    </PaginationItem>
+                    {pageWindow(page, pages).flatMap((p, i, arr) => [
+                      i > 0 && arr[i - 1] !== p - 1 ? (
+                        <PaginationItem key={`gap-${p}`}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      ) : null,
+                      <PaginationItem key={p}>
+                        <PaginationLink isActive={p === page} onClick={(e) => (e.preventDefault(), update({ page: String(p) }, true))}>
+                          {p}
+                        </PaginationLink>
+                      </PaginationItem>,
+                    ])}
+                    <PaginationItem>
+                      <PaginationNext aria-disabled={page === pages} onClick={(e) => (e.preventDefault(), page < pages && update({ page: String(page + 1) }, true))} />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              ) : null}
+            </footer>
+          ) : view === "groups" && groups?.length ? (
+            <footer className="text-sm text-fg-muted tabular-nums">共 {formatCount(visibleGroups.length)} 个分组</footer>
+          ) : null}
+        </section>
+      </div>
 
       <QrDialog url={qrUrl} onClose={() => setQrUrl(null)} />
       <EditLinkDrawer link={editing} onClose={() => setEditing(null)} onSaved={replaceLink} />
