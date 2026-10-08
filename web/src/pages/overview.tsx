@@ -115,11 +115,11 @@ export function OverviewPage() {
               访问最多
             </h3>
             {data?.top_links.length ? (
-              <Table flush>
+              <Table flush className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead>短链</TableHead>
-                    <TableHead className="w-28 @max-xl/main:hidden">分组</TableHead>
+                    <TableHead className="w-36 @max-xl/main:hidden">分组</TableHead>
                     <TableHead className="w-24 text-right">累计访问</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -147,7 +147,7 @@ export function OverviewPage() {
               最近创建
             </h3>
             {data?.recent_links.length ? (
-              <Table flush>
+              <Table flush className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead>短链</TableHead>
