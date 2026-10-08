@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link2 } from "lucide-react";
 import { CreateLink } from "@/components/create-link";
 import { QuotaDialog } from "@/components/quota-dialog";
 import { QrDialog } from "@/components/qr-dialog";
@@ -10,8 +11,8 @@ import type { Usage } from "@/lib/api";
 const DATA_PARAMS = ["view", "scope", "group", "q", "sort", "dir", "page", "link", "g"];
 
 /**
- * 生成短链：只有一个输入框和一个按钮，居中、宽不超过 672（用户 2026-10-08：「只有一个输入框，然后一个生成按钮，很简单」）。
- * 不放可见标题：标题复述按钮是多余的，页名留给读屏。生成后的结果条紧贴在下，点短链去数据页看它的抽屉。
+ * 生成短链：单输入工具的排法（Mindtrip、Bloom、Delphi、Chronicle 的共性）——图标、标题、输入组一列居中，落在主区视觉中心略偏上；
+ * 标题说这页做什么，按钮只写动词「生成」，不复述标题。不放说明句、默认值与用量。生成后的结果条紧贴在输入组下面。
  */
 export function CreatePage() {
   const { data: boot } = useBootstrap();
@@ -25,9 +26,16 @@ export function CreatePage() {
   if (DATA_PARAMS.some((k) => params.has(k))) return <Navigate replace to={`/data${search}`} />;
 
   return (
-    <div className="mx-auto grid w-full max-w-2xl gap-4 pt-32">
-      <h1 className="sr-only">生成短链</h1>
-      <CreateLink usage={usage} onUsage={setUsage} onCreated={() => undefined} onShowQr={setQrUrl} onOpen={(l) => navigate(`/data?link=${l.id}`)} onQuotaExceeded={() => setQuotaOpen(true)} />
+    <div className="grid flex-1 place-items-center pb-24">
+      <div className="grid w-full max-w-xl justify-items-center gap-6">
+        <span aria-hidden className="grid size-12 place-items-center rounded-card bg-card text-accent shadow-card">
+          <Link2 className="size-6" />
+        </span>
+        <h1 className="text-2xl font-semibold">生成短链</h1>
+        <div className="w-full">
+          <CreateLink usage={usage} onUsage={setUsage} onCreated={() => undefined} onShowQr={setQrUrl} onOpen={(l) => navigate(`/data?link=${l.id}`)} onQuotaExceeded={() => setQuotaOpen(true)} />
+        </div>
+      </div>
       <QrDialog url={qrUrl} onClose={() => setQrUrl(null)} />
       <QuotaDialog open={quotaOpen} usage={usage} userName={boot.user.name} onClose={() => setQuotaOpen(false)} />
     </div>

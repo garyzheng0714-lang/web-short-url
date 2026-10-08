@@ -35,17 +35,19 @@ function Account({ className }: { className?: string }) {
 }
 
 /**
- * 侧栏：站名 + 账号菜单，下面三个入口。导航项不放进 NavMenu：那样会有一块跟随悬停底和一块滑动的当前底叠着追，
- * 切换显得拖沓；单独放时当前底是静态的、悬停是 CSS，点了直接到位。
+ * 侧栏：顶上是站标与站名，中间三个入口，账号头像在左下角（Hootsuite、Plain、Shop、Dub 的排法：头像点开是菜单）。
+ * 导航项不放进 NavMenu：那样会有一块跟随悬停底和一块滑动的当前底叠着追，切换显得拖沓；单独放时当前底是静态的、悬停是 CSS。
  */
 function Sidebar() {
   const current = useCurrentKey();
   return (
     <SplitPane asChild width={228} scroll={false} surface="none" className="px-2">
       <nav aria-label="工作区" className="flex flex-col">
-        <div className="flex h-(--ds-header-h) shrink-0 items-center justify-between pl-2">
+        <div className="flex h-(--ds-header-h) shrink-0 items-center gap-2 px-2">
+          <span aria-hidden className="grid size-6 place-items-center rounded-sm bg-accent text-primary-fg">
+            <Link2 className="size-4" />
+          </span>
           <span className="text-sm font-semibold">{BRAND}</span>
-          <Account />
         </div>
         <div className="grid gap-(--ds-gap-row)">
           {PAGES.map((p) => (
@@ -53,6 +55,9 @@ function Sidebar() {
               <Link to={p.to}>{p.label}</Link>
             </NavItem>
           ))}
+        </div>
+        <div className="mt-auto flex py-3 pl-1.5">
+          <Account />
         </div>
       </nav>
     </SplitPane>
@@ -84,7 +89,7 @@ function Frame() {
         <SplitPane scroll={false} className="@container/main">
           <NarrowNav />
           <div className="min-h-0 flex-1 overflow-y-auto scroll-safe">
-            <main className="mx-auto max-w-5xl px-6 pb-16">
+            <main className="mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-16">
               <Outlet />
             </main>
           </div>

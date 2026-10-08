@@ -78,7 +78,7 @@ export function CreateLink({ usage, onUsage, onCreated, onShowQr, onOpen, onQuot
           aria-invalid={error ? true : undefined}
         />
         <Button type="submit" variant="primary" loading={pending}>
-          生成短链
+          生成
         </Button>
       </div>
       {error ? (

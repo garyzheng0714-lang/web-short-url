@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { X } from "lucide-react";
+import { ChartNoAxesColumn, ChevronRight, CornerDownRight, FolderOpen, Globe, X } from "lucide-react";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchField } from "@/components/ui/search-field";
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
 import { MetricCard } from "@/components/ui/metric-card";
 import { LineChart } from "@/components/ui/line-chart";
 import { Sparkline } from "@/components/ui/sparkline";
@@ -23,7 +24,7 @@ import { useBootstrap } from "@/app/bootstrap";
 import { api, type GroupItem, type LinkItem, type ListLinksResult, type Overview } from "@/lib/api";
 import { STATUS_LABEL, changeRatio, fmtDateShort, formatCount, shortUrlDisplay } from "@/lib/format";
 
-const PAGE_SIZE = 18;
+const PAGE_SIZE = 20;
 const STATUS_TAG: Record<string, "neutral" | "warning" | "danger"> = { suspended: "warning", banned: "danger", missing: "neutral" };
 
 function pageWindow(current: number, pages: number) {
@@ -98,66 +99,86 @@ function OverviewCards({ scope, range, group }: { scope: "all" | "mine"; range: 
   );
 }
 
-function LinkCard({ link, trend, onOpen, onChanged, onQr, onEdit }: { link: LinkItem; trend?: number[]; onOpen: (l: LinkItem) => void; onChanged: (l: LinkItem) => void; onQr: (url: string) => void; onEdit: (l: LinkItem) => void }) {
-  const target = `${link.name && !/^短链/.test(link.name) ? `${link.name} · ` : ""}${shortUrlDisplay(link.target_url)}`;
+/** 列表容器：一块白底柔影的面，行之间一条细线；行的悬停底贴到面的圆角里 */
+const LIST = "overflow-hidden rounded-card bg-card shadow-card divide-y divide-line";
+const ROW = "relative flex min-h-16 items-center gap-4 px-4 py-3 transition-colors duration-(--ds-dur-fast) hover:bg-hover";
+/** 整行是点击目标：一层盖满的按钮；复制、菜单浮在它上面（z-10） */
+const ROW_HIT = "absolute inset-0 outline-none focus-visible:focus-ring";
+
+function VisitsPill({ value }: { value: number }) {
   return (
-    <Card onClick={() => onOpen(link)} label={`查看 ${shortUrlDisplay(link.link_url)} 的数据`}>
-      <CardHeader>
-        <CardTitle className="text-base">
-          <span className="block truncate">
-            <span className="font-normal text-fg-muted">{link.domain}/</span>
-            {link.key || shortUrlDisplay(link.link_url)}
-          </span>
-        </CardTitle>
-        <CardDescription className="truncate" title={link.target_url}>
-          {target}
-        </CardDescription>
-        <CardAction>
-          <LinkRowMenu link={link} onChanged={onChanged} onQr={onQr} onEdit={onEdit} onOpen={onOpen} />
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex items-end gap-4">
-        <div className="grid">
-          <span className="text-2xl font-semibold tabular-nums">{formatCount(link.stats.visit_count)}</span>
-          <span className="text-xs text-fg-muted">累计访问</span>
-        </div>
-        {trend && trend.some((v) => v > 0) ? (
-          <div className="ml-auto w-28">
-            <Sparkline data={trend} label={`${shortUrlDisplay(link.link_url)} 近 7 天访问`} readout={false} interactive={false} height={32} area={false} />
-          </div>
-        ) : null}
-      </CardContent>
-      <CardFooter className="flex min-w-0 items-center gap-2 text-xs text-fg-muted">
-        <span className="min-w-0 truncate">{link.group_name || "未分组"}</span>
-        <span aria-hidden>·</span>
-        <span className="shrink-0 tabular-nums">{fmtDateShort(link.created_at)}</span>
-        {link.status !== "active" ? (
-          <Tag variant={STATUS_TAG[link.status]} className="ml-auto shrink-0">
-            {STATUS_LABEL[link.status]}
-          </Tag>
-        ) : null}
-      </CardFooter>
-    </Card>
+    <Tag variant="chip" className="shrink-0 text-fg tabular-nums">
+      <ChartNoAxesColumn aria-hidden className="size-3.5" />
+      {formatCount(value)}
+    </Tag>
   );
 }
 
-function GroupCard({ group, onOpen }: { group: GroupItem; onOpen: (g: GroupItem) => void }) {
+/** 一条短链（Dub 链接列表的排法）：图标 · 短链 + 复制 / 目标链接 · 近 7 天 · 分组 · 创建日期 · 访问次数 · ⋯ */
+function LinkRow({ link, trend, onOpen, onChanged, onQr, onEdit }: { link: LinkItem; trend?: number[]; onOpen: (l: LinkItem) => void; onChanged: (l: LinkItem) => void; onQr: (url: string) => void; onEdit: (l: LinkItem) => void }) {
+  const short = shortUrlDisplay(link.link_url);
+  const target = `${link.name && !/^短链/.test(link.name) ? `${link.name} · ` : ""}${shortUrlDisplay(link.target_url)}`;
   return (
-    <Card onClick={() => onOpen(group)} label={`查看分组 ${group.name}`}>
-      <CardHeader>
-        <CardTitle className="text-base">
-          <span className="block truncate">{group.name}</span>
-        </CardTitle>
-        <CardDescription className="truncate tabular-nums">
+    <li className={ROW}>
+      <button type="button" className={ROW_HIT} aria-label={`查看 ${short} 的数据`} onClick={() => onOpen(link)} />
+      <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-well text-fg-muted">
+        <Globe className="size-4" />
+      </span>
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        <div className="flex min-w-0 items-center gap-1">
+          <span className="truncate text-sm font-medium text-fg">
+            <span className="font-normal text-fg-muted">{link.domain}/</span>
+            {link.key || short}
+          </span>
+          <CopyButton value={link.link_url} label="复制短链" iconOnly size="icon-sm" className="relative z-10 shrink-0" />
+          {link.status !== "active" ? (
+            <Tag variant={STATUS_TAG[link.status]} className="shrink-0">
+              {STATUS_LABEL[link.status]}
+            </Tag>
+          ) : null}
+        </div>
+        <div className="flex min-w-0 items-center gap-1 text-xs text-fg-muted">
+          <CornerDownRight aria-hidden className="size-3.5 shrink-0" />
+          <span className="truncate" title={link.target_url}>
+            {target}
+          </span>
+        </div>
+      </div>
+      <span className="hidden w-20 shrink-0 @2xl/data:block">
+        {trend && trend.some((v) => v > 0) ? <Sparkline data={trend} label={`${short} 近 7 天访问`} readout={false} interactive={false} height={24} area={false} /> : null}
+      </span>
+      <span className="hidden w-36 shrink-0 truncate text-xs text-fg-muted @4xl/data:block">{link.group_name || "未分组"}</span>
+      <span className="hidden w-12 shrink-0 text-right text-xs text-fg-muted tabular-nums @xl/data:block">{fmtDateShort(link.created_at)}</span>
+      <span data-part="visits" className="flex w-20 shrink-0 justify-end">
+        <VisitsPill value={link.stats.visit_count} />
+      </span>
+      <span className="relative z-10 shrink-0">
+        <LinkRowMenu link={link} onChanged={onChanged} onQr={onQr} onEdit={onEdit} onOpen={onOpen} />
+      </span>
+    </li>
+  );
+}
+
+/** 一个分组：图标 · 分组名 / 短链数 · 被访问过 · 归属 · 访问次数 */
+function GroupRow({ group, onOpen }: { group: GroupItem; onOpen: (g: GroupItem) => void }) {
+  return (
+    <li className={ROW}>
+      <button type="button" className={ROW_HIT} aria-label={`查看分组 ${group.name}`} onClick={() => onOpen(group)} />
+      <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-well text-fg-muted">
+        <FolderOpen className="size-4" />
+      </span>
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        <span className="truncate text-sm font-medium text-fg">{group.name}</span>
+        <span className="truncate text-xs text-fg-muted tabular-nums">
           {formatCount(group.link_count)} 条短链 · {formatCount(group.visited_links)} 条被访问过
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid">
-        <span className="text-2xl font-semibold tabular-nums">{formatCount(group.visits)}</span>
-        <span className="text-xs text-fg-muted">累计访问</span>
-      </CardContent>
-      {group.owner?.name ? <CardFooter className="text-xs text-fg-muted">归属 {group.owner.name}</CardFooter> : null}
-    </Card>
+          {group.owner?.name ? ` · 归属 ${group.owner.name}` : ""}
+        </span>
+      </div>
+      <span className="flex w-24 shrink-0 justify-end">
+        <VisitsPill value={group.visits} />
+      </span>
+      <ChevronRight aria-hidden className="size-4 shrink-0 text-fg-subtle" />
+    </li>
   );
 }
 
@@ -305,11 +326,11 @@ export function DataPage() {
 
         {view === "list" ? (
           items.length ? (
-            <div className="grid gap-4 @xl/data:grid-cols-2 @4xl/data:grid-cols-3">
+            <ul aria-label="短链" className={LIST}>
               {items.map((l) => (
-                <LinkCard key={l.id} link={l} trend={trends[l.id]} onOpen={openLink} onChanged={replaceLink} onQr={setQrUrl} onEdit={setEditing} />
+                <LinkRow key={l.id} link={l} trend={trends[l.id]} onOpen={openLink} onChanged={replaceLink} onQr={setQrUrl} onEdit={setEditing} />
               ))}
-            </div>
+            </ul>
           ) : state === "loading" ? (
             <div className="grid h-40 place-items-center">
               <Spinner delay={400} label="正在加载" />
@@ -339,11 +360,11 @@ export function DataPage() {
             <Spinner delay={400} label="正在加载" />
           </div>
         ) : visibleGroups.length ? (
-          <div className="grid gap-4 @xl/data:grid-cols-2 @4xl/data:grid-cols-3">
+          <ul aria-label="分组" className={LIST}>
             {visibleGroups.map((g) => (
-              <GroupCard key={g.id} group={g} onOpen={openGroup} />
+              <GroupRow key={g.id} group={g} onOpen={openGroup} />
             ))}
-          </div>
+          </ul>
         ) : (
           <EmptyState title={text ? `没有找到「${text}」` : "还没有分组"} />
         )}
