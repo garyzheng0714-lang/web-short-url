@@ -88,25 +88,19 @@ export function LinkRowMenu({ link, onChanged, onQr, onEdit, onOpen }: { link: L
   );
 }
 
-export function EditLinkDrawer({ link, onClose, onSaved }: { link: LinkItem | null; onClose: () => void; onSaved: (l: LinkItem) => void }) {
-  const [name, setName] = useState("");
-  const [target, setTarget] = useState("");
-  const [bot, setBot] = useState(false);
-  const [wechat, setWechat] = useState(false);
-  const [webhook, setWebhook] = useState(false);
+/**
+ * 编辑短链的表单（名称、目标链接、三个开关）。列表页在抽屉里用（EditLinkDrawer）；详情抽屉里原地切换成它，不在抽屉上再叠一层。
+ * footer：放进抽屉底栏时由调用方包；不传时按钮排在表单下方右侧。
+ */
+export function EditLinkForm({ link, onCancel, onSaved, renderFooter }: { link: LinkItem; onCancel: () => void; onSaved: (l: LinkItem) => void; renderFooter?: (buttons: React.ReactNode) => React.ReactNode }) {
+  const [name, setName] = useState(link.name);
+  const [target, setTarget] = useState(link.target_url);
+  const [bot, setBot] = useState(link.flags.advanced_bot_detection);
+  const [wechat, setWechat] = useState(link.flags.escape_from_wechat);
+  const [webhook, setWebhook] = useState(link.flags.webhook);
   const [error, setError] = useState("");
-  useEffect(() => {
-    if (!link) return;
-    setName(link.name);
-    setTarget(link.target_url);
-    setBot(link.flags.advanced_bot_detection);
-    setWechat(link.flags.escape_from_wechat);
-    setWebhook(link.flags.webhook);
-    setError("");
-  }, [link]);
 
   const save = async () => {
-    if (!link) return;
     const url = target.trim();
     if (!/^https?:\/\//i.test(url)) {
       setError("目标链接要以 http:// 或 https:// 开头");
@@ -120,60 +114,81 @@ export function EditLinkDrawer({ link, onClose, onSaved }: { link: LinkItem | nu
     if (wechat !== link.flags.escape_from_wechat) patch.escape_from_wechat = wechat;
     if (webhook !== link.flags.webhook) patch.webhook = webhook;
     if (!Object.keys(patch).length) {
-      onClose();
+      onCancel();
       return;
     }
     try {
       const { link: next } = await api.updateLink(link.id, patch);
-      onSaved(next);
       toast.success("已保存");
-      onClose();
+      onSaved(next);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "保存失败");
       throw e;
     }
   };
 
+  const buttons = (
+    <>
+      <Button variant="secondary" onClick={onCancel}>
+        取消
+      </Button>
+      <ActionButton label="保存" pendingLabel="正在保存" successLabel="已保存" errorLabel="保存失败" onAction={save} />
+    </>
+  );
+  return (
+    <>
+      <div className="grid gap-6">
+        <Field>
+          <FieldLabel>名称</FieldLabel>
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={128} />
+        </Field>
+        <Field>
+          <FieldLabel>目标链接</FieldLabel>
+          <Input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="url" aria-invalid={error ? true : undefined} />
+          <FieldDescription>改了之后已发出去的短链会跳到新地址</FieldDescription>
+          <FieldError>{error}</FieldError>
+        </Field>
+        <div className="grid gap-3">
+          <Switch
+            label="深度过滤机器访问"
+            checked={bot}
+            onCheckedChange={(v) => {
+              setBot(v);
+              if (v) setWechat(false);
+            }}
+          />
+          <Switch
+            label="微信内强制浏览器打开"
+            checked={wechat}
+            onCheckedChange={(v) => {
+              setWechat(v);
+              if (v) setBot(false);
+            }}
+          />
+          <Switch label="事件推送" checked={webhook} onCheckedChange={setWebhook} />
+        </div>
+      </div>
+      {renderFooter ? renderFooter(buttons) : <div className="flex justify-end gap-2">{buttons}</div>}
+    </>
+  );
+}
+
+export function EditLinkDrawer({ link, onClose, onSaved }: { link: LinkItem | null; onClose: () => void; onSaved: (l: LinkItem) => void }) {
   return (
     <Drawer open={Boolean(link)} onOpenChange={(open) => !open && onClose()}>
       <DrawerContent title="编辑短链" description={link ? shortUrlDisplay(link.link_url) : undefined} side="right">
-        <div className="grid gap-6 p-inset">
-          <Field>
-            <FieldLabel>名称</FieldLabel>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={128} />
-          </Field>
-          <Field>
-            <FieldLabel>目标链接</FieldLabel>
-            <Input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="url" aria-invalid={error ? true : undefined} />
-            <FieldDescription>改了之后已发出去的短链会跳到新地址</FieldDescription>
-            <FieldError>{error}</FieldError>
-          </Field>
-          <div className="grid gap-3">
-            <Switch
-              label="深度过滤机器访问"
-              checked={bot}
-              onCheckedChange={(v) => {
-                setBot(v);
-                if (v) setWechat(false);
-              }}
-            />
-            <Switch
-              label="微信内强制浏览器打开"
-              checked={wechat}
-              onCheckedChange={(v) => {
-                setWechat(v);
-                if (v) setBot(false);
-              }}
-            />
-            <Switch label="事件推送" checked={webhook} onCheckedChange={setWebhook} />
-          </div>
-        </div>
-        <DrawerFooter>
-          <Button variant="secondary" onClick={onClose}>
-            取消
-          </Button>
-          <ActionButton label="保存" pendingLabel="正在保存" successLabel="已保存" errorLabel="保存失败" onAction={save} />
-        </DrawerFooter>
+        {link ? (
+          <EditLinkForm
+            key={link.id}
+            link={link}
+            onCancel={onClose}
+            onSaved={(next) => {
+              onSaved(next);
+              onClose();
+            }}
+            renderFooter={(buttons) => <DrawerFooter>{buttons}</DrawerFooter>}
+          />
+        ) : null}
       </DrawerContent>
     </Drawer>
   );

@@ -81,7 +81,7 @@ export function SettingsPage() {
   const domains = [...new Set([...boot.domains.map((d) => d.domain), boot.default_domain_fallback])];
 
   return (
-    <div className="grid gap-10 pt-10">
+    <div className="grid gap-10 pt-4">
       <h1 className="text-2xl font-semibold">设置</h1>
 
       <section className="grid max-w-xl gap-6" aria-labelledby="s-defaults">

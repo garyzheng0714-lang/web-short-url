@@ -58,7 +58,7 @@ const box = (loc) => loc.boundingBox();
 
 // ===== 管理员 =====
 const { ctx, page, settle, shot } = await open(TOKEN);
-const nav = page.getByRole("navigation", { name: "工作区" });
+const nav = page.locator("[aria-label=主导航]").first();
 
 console.log("1. 侧栏与生成短链页");
 await page.goto(`${BASE}/`);
@@ -92,7 +92,40 @@ const avatarBox = await box(nav.getByRole("button", { name: /^账号菜单/ }));
 const navBox = await box(nav);
 check("账号行在侧栏底部", avatarBox.y + avatarBox.height > navBox.y + navBox.height - 80, `y ${avatarBox.y}`);
 const accountText = (await nav.getByRole("button", { name: /^账号菜单/ }).textContent()) || "";
-check("账号行不只是头像：有名字和身份", avatarBox.width > 150 && /管理员|成员/.test(accountText), accountText.trim());
+check("账号行不只是头像：有名字", avatarBox.width > 150 && accountText.trim().length > 0, accountText.trim());
+const navItemBox = await box(nav.getByRole("link", { name: "设置" }));
+check("账号行和导航项同高", Math.abs(avatarBox.height - navItemBox.height) <= 0.5, `${avatarBox.height} / ${navItemBox.height}`);
+// 侧栏的两条竖线：图标中心线（站标、导航图标、头像）与文字起点线（站名、导航文字、用户名）
+const lines = await page.evaluate(() => {
+  const nav = document.querySelector("nav[aria-label=主导航], [aria-label=主导航]");
+  const r = (el) => el?.getBoundingClientRect();
+  const mark = r(document.querySelector("[data-slot=sidebar-header] > span"));
+  const brand = r(document.querySelector("[data-slot=sidebar-header] > span:last-child"));
+  const firstItem = document.querySelector("[data-slot=sidebar-content] a");
+  const icon = r(firstItem?.querySelector("svg"));
+  const item = r(firstItem);
+  const label = (() => { const w = document.createTreeWalker(firstItem, NodeFilter.SHOW_TEXT); const n = w.nextNode(); if (!n) return null; const rg = document.createRange(); rg.selectNodeContents(n); return rg.getBoundingClientRect(); })();
+  const acct = document.querySelector("[data-slot=sidebar-footer] button");
+  const avatar = r(acct?.querySelector("[data-slot=avatar]"));
+  const name = r(acct?.querySelector("span.truncate"));
+  const header = r(document.querySelector("[data-slot=sidebar-header]"));
+  return { markC: mark.x + mark.width / 2, iconC: icon.x + icon.width / 2, avatarC: avatar.x + avatar.width / 2, brandX: brand.x, labelX: label.x, nameX: name.x, gap: item.y - (header.y + header.height), nav: Boolean(nav) };
+});
+check("站标、导航图标、头像的中心同一条竖线", Math.abs(lines.markC - lines.iconC) <= 0.5 && Math.abs(lines.avatarC - lines.iconC) <= 0.5, `${lines.markC} / ${lines.iconC} / ${lines.avatarC}`);
+check("站名、导航文字、用户名的起点同一条竖线", Math.abs(lines.brandX - lines.labelX) <= 1 && Math.abs(lines.nameX - lines.labelX) <= 1, `${lines.brandX} / ${lines.labelX} / ${lines.nameX}`);
+check("站名行与第一个导航项之间有间距", lines.gap >= 8, `${lines.gap}px`);
+// 收起 / 展开（Su Sidebar 的触发器）
+await page.getByRole("button", { name: "收起侧栏" }).click();
+// 收起后鼠标停在按钮上会浮出侧栏（Su 的 peek），移开再量
+await page.mouse.move(900, 500);
+await page.waitForTimeout(800);
+const collapsed = await box(page.locator("main"));
+const navAfter = await nav.boundingBox();
+check("收起按钮能收起侧栏，正文占满", (await page.getByRole("button", { name: "展开侧栏" }).count()) === 1 && (!navAfter || navAfter.x + navAfter.width <= 1), `nav ${navAfter ? Math.round(navAfter.x + navAfter.width) : "隐藏"} · 正文左 ${Math.round(collapsed.x)}`);
+await shot("01c-sidebar-collapsed", false);
+await page.getByRole("button", { name: "展开侧栏" }).click();
+await page.waitForTimeout(600);
+check("再点展开回来", await nav.getByRole("link", { name: "仪表盘" }).isVisible());
 await nav.getByRole("button", { name: /^账号菜单/ }).click();
 await page.getByRole("menuitem", { name: "退出登录" }).waitFor({ timeout: 5000 });
 check("退出登录在账号菜单（二级菜单）里", await page.getByRole("menuitem", { name: "退出登录" }).isVisible());
@@ -231,7 +264,12 @@ for (const url of ["/", "/dashboard", "/data"]) {
   });
   check(`390 宽 ${url} 无横向溢出`, overflow <= 0, `${overflow}px`);
 }
-check("390 宽侧栏收起、顶上一行入口与账号菜单", !(await nav.isVisible()) && (await page.getByRole("link", { name: "仪表盘" }).first().isVisible()) && (await page.getByRole("button", { name: /^账号菜单/ }).first().isVisible()));
+check("390 宽侧栏换成抽屉、留展开按钮", !(await page.getByRole("link", { name: "仪表盘" }).first().isVisible().catch(() => false)) && (await page.getByRole("button", { name: "展开侧栏" }).isVisible()));
+await page.getByRole("button", { name: "展开侧栏" }).click();
+await page.waitForTimeout(600);
+check("390 宽点开抽屉能看到导航与账号行", (await page.getByRole("link", { name: "仪表盘" }).first().isVisible()) && (await page.getByRole("button", { name: /^账号菜单/ }).first().isVisible()));
+await page.keyboard.press("Escape");
+await page.waitForTimeout(400);
 await shot("09-data-mobile");
 await ctx.close();
 

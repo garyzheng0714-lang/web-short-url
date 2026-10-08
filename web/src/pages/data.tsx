@@ -192,7 +192,7 @@ export function DataPage() {
   const filtered = Boolean(group || q);
 
   return (
-    <div className="@container/data grid gap-6 pt-10">
+    <div className="@container/data grid gap-6 pt-4">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold">短链访问数据</h1>
         {admin ? (

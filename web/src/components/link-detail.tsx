@@ -8,14 +8,13 @@ import { Avatar } from "@/components/ui/avatar";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StatsPanel } from "@/components/stats-panel";
-import { QrDialog } from "@/components/qr-dialog";
+import { QrPopover } from "@/components/qr-dialog";
 import { BotSwitch, RangeSegmented, rangeLabel, type RangeKey } from "@/components/range-control";
-import { EditLinkDrawer, claimLink, toggleSuspend } from "@/components/link-actions";
+import { EditLinkForm, claimLink, toggleSuspend } from "@/components/link-actions";
 import { useBootstrap } from "@/app/bootstrap";
 import { api, type LinkItem, type LinkStats, type VisitRecord } from "@/lib/api";
 import { BROWSER_LABEL, DEVICE_LABEL, OS_LABEL, STATUS_LABEL, fmtDateTime, formatNumber, hostOf, labelOf, relativeTime, shortUrlDisplay } from "@/lib/format";
@@ -27,6 +26,8 @@ const VISITS_PAGE = 20;
  * 一条短链的详情与数据。放在抽屉里（?link=id），不独占页面；短链地址与目标链接由抽屉标题和副标题承担。
  * 排法照 Dub、Bitly 的链接详情：最常用的两个动作（复制、二维码）在前，其余收进「⋯」；属性是一张标签 · 值的小表；
  * 「访问数据」一节自己带时间范围与含机器访问；指标三个，名字里不再重复时间范围。
+ * 抽屉上不再叠模态：二维码是从按钮弹出的小浮层，跳转链路在属性下面原地展开，编辑是原地换成表单
+ * （叠两层带背景模糊的遮罩时，Chrome 会漏画一块，用户截图里抽屉变灰、中间留一块没盖住）。
  */
 export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: LinkItem) => void }) {
   const uid = useId();
@@ -40,8 +41,7 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
   const [statsError, setStatsError] = useState("");
   const [visits, setVisits] = useState<{ items: VisitRecord[]; total: number; page: number } | null>(null);
   const [visitsPage, setVisitsPage] = useState(1);
-  const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [editing, setEditing] = useState<LinkItem | null>(null);
+  const [editing, setEditing] = useState(false);
   const [route, setRoute] = useState<{ open: boolean; loading: boolean; steps: { url: string; status: number }[]; final: string; error: string }>({ open: false, loading: false, steps: [], final: "", error: "" });
 
   const setLink = useCallback(
@@ -120,13 +120,28 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
 
   return (
     <div className="@container/detail grid gap-8">
+      {editing ? (
+        <section aria-label="编辑短链" className="grid gap-6">
+          <h3 className="text-sm font-medium">编辑</h3>
+          <EditLinkForm
+            link={link}
+            onCancel={() => setEditing(false)}
+            onSaved={(next) => {
+              setLink(next);
+              setEditing(false);
+            }}
+          />
+        </section>
+      ) : (
       <div className="grid gap-6">
         <div className="flex items-center gap-2">
           <CopyButton value={link.link_url} label="复制短链" variant="secondary" size="md" />
-          <Button variant="secondary" onClick={() => setQrUrl(link.link_url)}>
-            <QrCode aria-hidden />
-            二维码
-          </Button>
+          <QrPopover url={link.link_url}>
+            <Button variant="secondary">
+              <QrCode aria-hidden />
+              二维码
+            </Button>
+          </QrPopover>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="secondary" size="icon" aria-label="更多操作">
@@ -145,7 +160,7 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
               {link.can_manage ? (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => setEditing(link)}>
+                  <DropdownMenuItem onSelect={() => setEditing(true)}>
                     <Pencil aria-hidden />
                     编辑
                   </DropdownMenuItem>
@@ -205,7 +220,41 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
           <dt className="text-fg-muted">创建时间</dt>
           <dd className="tabular-nums">{fmtDateTime(link.created_at)}</dd>
         </dl>
+
+        {route.open ? (
+          <section aria-label="跳转链路" className="grid gap-2 rounded-row bg-well p-3 text-sm">
+            <div className="flex items-center">
+              <h4 className="mr-auto font-medium">跳转链路</h4>
+              <Button variant="ghost" size="sm" className="edge-end" onClick={() => setRoute((r) => ({ ...r, open: false }))}>
+                收起
+              </Button>
+            </div>
+            {route.loading ? (
+              <Spinner delay={400} label="正在解析" />
+            ) : route.error ? (
+              <p className="text-fg-muted">{route.error}</p>
+            ) : (
+              <ol className="grid gap-1.5">
+                {route.steps.map((st, i) => (
+                  <li key={i} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
+                    <span className="text-fg-muted tabular-nums">{st.status}</span>
+                    <span className="truncate font-mono" title={st.url}>
+                      {st.url}
+                    </span>
+                  </li>
+                ))}
+                <li className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
+                  <span className="text-fg-muted">落地</span>
+                  <a href={route.final} target="_blank" rel="noreferrer" className="truncate font-mono text-fg hover:underline" title={route.final}>
+                    {route.final}
+                  </a>
+                </li>
+              </ol>
+            )}
+          </section>
+        ) : null}
       </div>
+      )}
 
       <section aria-labelledby={`${uid}-data`} className="grid gap-6">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -282,36 +331,6 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
         )}
       </section>
 
-      <QrDialog url={qrUrl} onClose={() => setQrUrl(null)} />
-      <EditLinkDrawer link={editing} onClose={() => setEditing(null)} onSaved={setLink} />
-      <Dialog open={route.open} onOpenChange={(open) => !open && setRoute((r) => ({ ...r, open: false }))}>
-        <DialogContent title="跳转链路" description={shortUrlDisplay(link.link_url)} size="lg">
-          {route.loading ? (
-            <div className="grid h-24 place-items-center">
-              <Spinner delay={400} label="正在解析" />
-            </div>
-          ) : route.error ? (
-            <p className="text-sm text-fg-muted">{route.error}</p>
-          ) : (
-            <ol className="grid gap-2 text-sm">
-              {route.steps.map((s, i) => (
-                <li key={i} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2">
-                  <span className="text-fg-muted tabular-nums">{s.status}</span>
-                  <span className="truncate font-mono" title={s.url}>
-                    {s.url}
-                  </span>
-                </li>
-              ))}
-              <li className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 border-t border-line pt-2">
-                <span className="text-fg-muted">落地</span>
-                <a href={route.final} target="_blank" rel="noreferrer" className="truncate font-mono text-fg hover:underline" title={route.final}>
-                  {route.final}
-                </a>
-              </li>
-            </ol>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

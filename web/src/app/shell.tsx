@@ -1,22 +1,19 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChevronsUpDown, LayoutDashboard, Link2, List, LogOut, Settings } from "lucide-react";
-import { Split, SplitPane } from "@/components/ui/split";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { NavItem } from "@/components/ui/nav-item";
-import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { UserMenu } from "@/components/ui/user-menu";
 import { BootstrapProvider, useBootstrap } from "./bootstrap";
 import { api } from "@/lib/api";
 import { clearSessionToken } from "@/lib/session";
 
 const BRAND = "短链生成工具";
-/** short：窄屏顶栏里的短名（四个全名放不下 390 宽） */
 const PAGES = [
-  { key: "create", to: "/", label: "生成短链", short: "生成", icon: <Link2 aria-hidden /> },
-  { key: "dashboard", to: "/dashboard", label: "仪表盘", short: "仪表盘", icon: <LayoutDashboard aria-hidden /> },
-  { key: "data", to: "/data", label: "短链访问数据", short: "列表", icon: <List aria-hidden /> },
-  { key: "settings", to: "/settings", label: "设置", short: "设置", icon: <Settings aria-hidden /> },
+  { key: "create", to: "/", label: "生成短链", icon: <Link2 aria-hidden /> },
+  { key: "dashboard", to: "/dashboard", label: "仪表盘", icon: <LayoutDashboard aria-hidden /> },
+  { key: "data", to: "/data", label: "短链访问数据", icon: <List aria-hidden /> },
+  { key: "settings", to: "/settings", label: "设置", icon: <Settings aria-hidden /> },
 ] as const;
 
 function useCurrentKey() {
@@ -34,8 +31,8 @@ async function logout() {
 }
 
 /**
- * 侧栏底部的账号行（X、Patreon、Klaviyo 展开侧栏的排法）：头像、名字、身份，末尾上下箭头；整行点开菜单，设置与退出登录在里面。
- * 头像左缘与站标、导航图标同一条线（侧栏 8 + 行内边距 8）。
+ * 侧栏底部的账号行（X、Patreon、Klaviyo 展开侧栏的排法）：头像、名字，末尾上下箭头；整行点开菜单，设置与退出登录在里面。
+ * 和导航项同高（--ds-h-row）。对齐：侧栏脚左内边距 8 + 行内边距 4，24 的头像中心在 24，和导航图标中心同一条竖线；名字从 40 起，和导航文字同一条线。
  */
 function AccountRow() {
   const { data } = useBootstrap();
@@ -47,13 +44,10 @@ function AccountRow() {
         <button
           type="button"
           aria-label={`账号菜单，${name}`}
-          className="flex w-full min-w-0 items-center gap-2 rounded-row px-2 py-1.5 text-left outline-none transition-colors duration-(--ds-dur-fast) hover:bg-hover focus-visible:focus-ring data-[state=open]:bg-hover"
+          className="flex h-(--ds-h-row) w-full min-w-0 items-center gap-1 rounded-row pr-2 pl-1 text-left outline-none transition-colors duration-(--ds-dur-fast) hover:bg-hover focus-visible:focus-ring data-[state=open]:bg-hover"
         >
-          <Avatar name={name} src={data.user.avatar_url || undefined} size={32} shape="circle" />
-          <span className="grid min-w-0 flex-1">
-            <span className="truncate text-sm font-medium text-fg">{name}</span>
-            <span className="truncate text-xs text-fg-muted">{data.user.is_admin ? "管理员" : "成员"}</span>
-          </span>
+          <Avatar name={name} src={data.user.avatar_url || undefined} size={24} shape="circle" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{name}</span>
           <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-fg-muted" />
         </button>
       </DropdownMenuTrigger>
@@ -73,70 +67,48 @@ function AccountRow() {
 }
 
 /**
- * 侧栏：顶上站标与站名，中间四个入口，底部账号行。
- * 导航项不放进 NavMenu：那样会有一块跟随悬停底和一块滑动的当前底叠着追，切换显得拖沓；单独放时当前底是静态的、悬停是 CSS。
+ * 外壳用 Su 的 Sidebar（收起 / 展开按钮在正文卡片左上角，快捷键 [；收起后碰左边缘浮出；右边线可拖动调宽；窄于 768 换成从左滑出的抽屉）。
+ * 侧栏头：24 的站标中心与导航图标中心同一条竖线（头左内边距 12 + 12 = 24，导航 8 + 8 + 8 = 24），站名与导航文字同从 40 起。
+ * 导航项单独放（不进 NavMenu）：当前底是静态的、悬停是 CSS，切换直接到位，不出现两块底追着滑。
  */
-function Sidebar() {
+function Frame() {
   const current = useCurrentKey();
   return (
-    <SplitPane asChild width={228} scroll={false} surface="none" className="px-2">
-      <nav aria-label="工作区" className="flex flex-col">
-        <div className="flex h-(--ds-header-h) shrink-0 items-center gap-2 px-2">
-          <span aria-hidden className="grid size-6 place-items-center rounded-sm bg-accent text-primary-fg">
+    <SidebarProvider className="@container h-dvh bg-sidebar text-fg">
+      <Sidebar label="主导航">
+        <SidebarHeader className="gap-1 ps-3">
+          <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-sm bg-accent text-primary-fg">
             <Link2 className="size-4" />
           </span>
-          <span className="text-sm font-semibold">{BRAND}</span>
-        </div>
-        <div className="grid gap-(--ds-gap-row)">
-          {PAGES.map((p) => (
-            <NavItem key={p.key} asChild icon={p.icon} active={p.key === current}>
-              <Link to={p.to}>{p.label}</Link>
-            </NavItem>
-          ))}
-        </div>
-        <div className="mt-auto py-2">
+          <span className="truncate text-sm font-semibold">{BRAND}</span>
+        </SidebarHeader>
+        <SidebarContent>
+          <div className="grid gap-(--ds-gap-row)">
+            {PAGES.map((p) => (
+              <NavItem key={p.key} asChild icon={p.icon} active={p.key === current}>
+                <Link to={p.to}>{p.label}</Link>
+              </NavItem>
+            ))}
+          </div>
+        </SidebarContent>
+        <SidebarFooter>
           <AccountRow />
-        </div>
-      </nav>
-    </SplitPane>
-  );
-}
-
-/** 窄屏（< 768）：侧栏让位，顶上一行短名入口，账号菜单（头像，顶栏的排法）在行尾 */
-function NarrowNav() {
-  const current = useCurrentKey();
-  const { data } = useBootstrap();
-  return (
-    <div className="flex h-(--ds-header-h) shrink-0 items-center gap-1 px-6 @3xl/app:hidden">
-      {PAGES.map((p) => (
-        <Button key={p.key} asChild variant="ghost" size="sm" aria-current={p.key === current ? "page" : undefined} className="first:edge-start">
-          <Link to={p.to} aria-label={p.label}>
-            {p.short}
-          </Link>
-        </Button>
-      ))}
-      <UserMenu user={{ name: data.user.name || "用户", avatar: data.user.avatar_url || undefined }} onSignOut={logout} className="edge-end ml-auto" />
-    </div>
-  );
-}
-
-function Frame() {
-  return (
-    <div className="@container/app h-dvh bg-canvas text-fg">
-      <Split>
-        <div className="hidden @3xl/app:contents">
-          <Sidebar />
-        </div>
-        <SplitPane scroll={false} className="@container/main">
-          <NarrowNav />
-          <div className="min-h-0 flex-1 overflow-y-auto scroll-safe">
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset className="min-h-0 p-(--ds-gutter) @max-xl:p-0">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-card bg-canvas @max-xl:rounded-none">
+          {/* 收起按钮嵌进卡片左上角：离上、左都是 4，圆角同心（同 Su 的 app-shell） */}
+          <header className="flex h-(--ds-header-h) shrink-0 items-center pl-1">
+            <SidebarTrigger className="rounded-popover" />
+          </header>
+          <div className="scroll-safe min-h-0 flex-1 overflow-y-auto">
             <main className="mx-auto flex min-h-full max-w-5xl flex-col px-6 pb-16">
               <Outlet />
             </main>
           </div>
-        </SplitPane>
-      </Split>
-    </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

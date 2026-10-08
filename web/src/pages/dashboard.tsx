@@ -101,7 +101,7 @@ export function DashboardPage() {
   const openGroup = (g: GroupItem) => (admin ? update({ g: g.id }) : navigate(`/data?group=${encodeURIComponent(g.id)}`));
 
   return (
-    <div className="cards @container/dash grid gap-6 pt-10">
+    <div className="cards @container/dash grid gap-6 pt-4">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold">仪表盘</h1>
         {admin ? (
