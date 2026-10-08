@@ -32,7 +32,7 @@ async function logout() {
 
 /**
  * 侧栏底部的账号行（Recraft、SchoolAI 的排法）：头像、名字，行尾淡色写当前权限（管理员 / 成员），不放箭头图标；整行点开菜单，设置与退出登录在里面。
- * 和导航项同高（--ds-h-row）。对齐：侧栏脚左内边距 8 + 行内边距 4，24 的头像中心在 24，和导航图标中心同一条竖线；头像与名字隔 8（同 Su UserMenu），名字从 44 起，和站名同一条线。
+ * 和导航项同高（--ds-h-row）。对齐：侧栏脚左内边距 8 + 行内边距 4，24 的头像中心在 24，和导航图标中心同一条竖线；头像与名字隔 8（同 Su UserMenu），名字从 44 起。
  */
 function AccountRow() {
   const { data } = useBootstrap();
@@ -70,7 +70,8 @@ function AccountRow() {
 /**
  * 外壳用 Su 的 Sidebar：折叠钮由侧栏自己画在第一栏右上角（展开时指向侧栏才淡入，收起后留 56 宽窄栏、按钮常驻顶部），
  * 快捷键 [；不做悬停浮出；右边线可拖动调宽；窄于 768 换成从左滑出的抽屉，正文顶栏的 SidebarTrigger 只在这时出现。
- * 侧栏头：24 的站标中心与导航图标中心同一条竖线（头左内边距 12 + 12 = 24，导航 8 + 8 + 8 = 24）；站标与站名隔 8，站名从 44 起，和账号行的名字同一条线。
+ * 侧栏头：20 的站标中心与导航图标中心同一条竖线（头左内边距 14 + 10 = 24，导航 8 + 8 + 8 = 24）；站标与站名隔 6，站名从 40 起，和导航文字同一条线
+ * （24 的站标隔 8 会让站名从 44 起，紧挨着导航文字错开 4，三种尺寸并排比过，20 最协调）。
  * 导航项单独放（不进 NavMenu）：当前底是静态的、悬停是 CSS，切换直接到位，不出现两块底追着滑。
  */
 function Frame() {
@@ -78,9 +79,9 @@ function Frame() {
   return (
     <SidebarProvider className="@container h-dvh bg-sidebar text-fg">
       <Sidebar label="主导航">
-        <SidebarHeader className="ps-3">
-          <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-sm bg-accent text-primary-fg">
-            <Link2 className="size-4" />
+        <SidebarHeader className="gap-1.5 ps-3.5">
+          <span aria-hidden className="grid size-5 shrink-0 place-items-center rounded-sm bg-accent text-primary-fg">
+            <Link2 className="size-3.5" />
           </span>
           <span className="truncate text-sm font-semibold">{BRAND}</span>
         </SidebarHeader>

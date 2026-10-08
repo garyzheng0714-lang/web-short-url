@@ -110,11 +110,11 @@ const lines = await page.evaluate(() => {
   const name = r(acct?.querySelector("span.truncate"));
   const header = r(document.querySelector("[data-slot=sidebar-header]"));
   const role = acct?.querySelector("[data-part=role]");
-  return { markC: mark.x + mark.width / 2, iconC: icon.x + icon.width / 2, avatarC: avatar.x + avatar.width / 2, markGap: brand.x - (mark.x + mark.width), avatarGap: name.x - (avatar.x + avatar.width), brandX: brand.x, nameX: name.x, role: role?.textContent || "", acctIcons: acct ? acct.querySelectorAll("svg").length : -1, gap: item.y - (header.y + header.height), nav: Boolean(nav) };
+  return { labelX: label.x, markC: mark.x + mark.width / 2, iconC: icon.x + icon.width / 2, avatarC: avatar.x + avatar.width / 2, markGap: brand.x - (mark.x + mark.width), avatarGap: name.x - (avatar.x + avatar.width), brandX: brand.x, nameX: name.x, role: role?.textContent || "", acctIcons: acct ? acct.querySelectorAll("svg").length : -1, gap: item.y - (header.y + header.height), nav: Boolean(nav) };
 });
 check("站标、导航图标、头像的中心同一条竖线", Math.abs(lines.markC - lines.iconC) <= 0.5 && Math.abs(lines.avatarC - lines.iconC) <= 0.5, `${lines.markC} / ${lines.iconC} / ${lines.avatarC}`);
-check("站标与站名、头像与名字都隔 8", Math.abs(lines.markGap - 8) <= 1 && Math.abs(lines.avatarGap - 8) <= 1, `${lines.markGap} / ${lines.avatarGap}`);
-check("站名与用户名起点同一条竖线", Math.abs(lines.brandX - lines.nameX) <= 1, `${lines.brandX} / ${lines.nameX}`);
+check("站名与导航文字起点同一条竖线（站标 20 隔 6）", Math.abs(lines.brandX - lines.labelX) <= 0.5 && Math.abs(lines.markGap - 6) <= 0.5, `${lines.brandX} / ${lines.labelX} · 隔 ${lines.markGap}`);
+check("头像与名字隔 8", Math.abs(lines.avatarGap - 8) <= 0.5, `${lines.avatarGap}`);
 check("账号行显示当前权限、没有箭头图标", ["管理员", "成员"].includes(lines.role.trim()) && lines.acctIcons === 0, `${lines.role} · 图标 ${lines.acctIcons}`);
 check("站名行与第一个导航项之间有间距", lines.gap >= 8, `${lines.gap}px`);
 // 折叠钮（Su Sidebar 自己画在第一栏右上角）：宽屏正文顶栏里没有按钮；展开时指向侧栏才显出来；收起后留 56 宽窄栏、按钮常驻顶部；不做悬停浮出
