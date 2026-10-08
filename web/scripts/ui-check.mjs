@@ -83,6 +83,65 @@ check("输入组落在主区视觉中心略偏上", centerRatio > 0.35 && center
 check("生成页只有输入框和按钮：没有用量行、没有列表与搜索", (await page.getByText(/本月已生成/).count()) === 0 && (await page.locator("main [data-slot=search-field], main table, main [data-slot=card]").count()) === 0);
 const btnBg = await btn.evaluate((el) => getComputedStyle(el).getPropertyValue("--btn-bg").trim().toLowerCase());
 check("主按钮是强调色（Notion 蓝）", btnBg === ACCENT, btnBg);
+// 批量（用户 2026-10-08：粘贴自动展开就行，一批最多 1000 条）。生成这一步在浏览器里拦下批量接口回假结果，不真的建链
+const pasteText = "路庆玲\thttps://www.foodtalks.cn/a\nhttps://www.fbif.com/b\nwww.foodtalks.cn/c\n这一行不是链接\nhttps://www.fbif.com/b";
+await page.getByRole("textbox", { name: "长链接" }).evaluate((el, text) => {
+  const dt = new DataTransfer();
+  dt.setData("text/plain", text);
+  el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+}, pasteText);
+const area = page.getByRole("textbox", { name: "长链接，一行一条" });
+await area.waitFor({ timeout: 5000 });
+const summary = ((await page.locator("[data-part=batch-summary]").textContent()) || "").trim();
+check("一次粘贴多条，输入框原地展开成多行框", (await area.inputValue()).includes("这一行不是链接") && (await page.getByRole("textbox", { name: "长链接", exact: true }).count()) === 0);
+check("逐行检查：3 条 · 1 行不是链接 · 1 条重复已合并", /^3 条 · 1 行不是链接 · 1 条重复已合并 · 本月还能生成/.test(summary), summary);
+check("按钮写条数「生成 3 条」，不是链接的行列出来", (await page.getByRole("button", { name: "生成 3 条" }).count()) === 1 && (await page.getByText(/^第 4 行不是链接/).count()) === 1);
+await shot("01d-batch-paste", false);
+await page.route("**/api/links/batch", async (route) => {
+  const body = route.request().postDataJSON();
+  const usage = { used: 2, limit: 5000, remaining: 4998, month: "2026-10", contact: "Gary" };
+  const items = body.items.map((it, index) => (index === 1 ? { index, error: "测试：小码拒绝了这条" } : { index, link: { id: 900000 + index, link_url: `https://t.fbif.com/test${index}`, target_url: it.target_url, name: it.name || "", domain: "t.fbif.com", key: `test${index}` } }));
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, data: { items, usage } }) });
+});
+await page.getByRole("button", { name: "生成 3 条" }).click();
+const resultHead = page.locator("section[aria-label=批量生成结果] [role=status]");
+await resultHead.waitFor({ timeout: 5000 });
+check("结果：已生成 2 条、1 条没生成，有复制全部和下载 CSV", /已生成 2 条，1 条没生成/.test((await resultHead.textContent()) || "") && (await page.getByRole("button", { name: "复制全部" }).count()) === 1 && (await page.getByRole("button", { name: "下载 CSV" }).count()) === 1);
+const resultRows = (await page.locator("table[aria-label=生成的短链] tbody tr").allTextContents()).map((t) => t.replace(/\s+/g, ""));
+check("结果顺序同粘贴顺序，名称带上", resultRows.length === 2 && resultRows[0].startsWith("路庆玲·www.foodtalks.cn/a") && resultRows[1].startsWith("www.foodtalks.cn/c"), resultRows.join(" | "));
+check("没生成的写明第几行、为什么", (await page.getByText("第 2 行：测试：小码拒绝了这条").count()) === 1);
+const headBtns = await Promise.all(["复制全部", "下载 CSV"].map((n) => box(page.getByRole("button", { name: n }))));
+const rowCopy = await page.locator("table[aria-label=生成的短链] tbody tr").first().evaluate((tr) => { const b = tr.querySelector("button").getBoundingClientRect(); const r = tr.getBoundingClientRect(); return Math.round((b.top + b.height / 2 - (r.top + r.height / 2)) * 10) / 10; });
+check("结果区「复制全部」「下载 CSV」同高，行里的复制钮在行中线", Math.abs(headBtns[0].height - headBtns[1].height) <= 0.5 && Math.abs(rowCopy) <= 0.5, `${headBtns[0].height} / ${headBtns[1].height} · 偏 ${rowCopy}`);
+await shot("01e-batch-result", false);
+await page.getByRole("button", { name: "把没生成的放回去" }).click();
+check("「把没生成的放回去」后多行框里只剩那一条", (await area.inputValue()).trim() === "https://www.fbif.com/b", (await area.inputValue()).trim());
+await page.getByRole("button", { name: "收起", exact: true }).click();
+await page.unroute("**/api/links/batch");
+check("收起回到单条输入框", (await page.getByRole("textbox", { name: "长链接", exact: true }).count()) === 1);
+// 一批 1000 条：多出的截掉；前端每 100 条提交一份（小码一次最多 100 条）
+const sizes = [];
+await page.route("**/api/links/batch", async (route) => {
+  const body = route.request().postDataJSON();
+  sizes.push(body.items.length);
+  const usage = { used: 2 + sizes.reduce((a, b) => a + b, 0), limit: 5000, remaining: 4998 - sizes.reduce((a, b) => a + b, 0), month: "2026-10", contact: "Gary" };
+  const items = body.items.map((it, index) => ({ index, link: { id: 800000 + sizes.length * 1000 + index, link_url: `https://t.fbif.com/k${sizes.length}-${index}`, target_url: it.target_url, name: "", domain: "t.fbif.com", key: "k" } }));
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, data: { items, usage } }) });
+});
+await page.getByRole("textbox", { name: "长链接", exact: true }).evaluate((el, text) => {
+  const dt = new DataTransfer();
+  dt.setData("text/plain", text);
+  el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+}, Array.from({ length: 1005 }, (_, i) => `https://www.fbif.com/p/${i}`).join("\n"));
+await area.waitFor({ timeout: 5000 });
+const bigSummary = ((await page.locator("[data-part=batch-summary]").textContent()) || "").trim();
+check("粘贴 1005 条：取前 1000 条，多出的写明", /^1,000 条 · 超过 1,000 条，后面 5 条这次不生成/.test(bigSummary), bigSummary);
+await page.getByRole("button", { name: "生成 1,000 条" }).click();
+await page.locator("section[aria-label=批量生成结果] [role=status]").waitFor({ timeout: 30000 });
+check("1000 条分 10 份提交、每份不超过 100 条，全部生成", sizes.length === 10 && Math.max(...sizes) === 100 && /已生成 1,000 条/.test((await page.locator("section[aria-label=批量生成结果] [role=status]").textContent()) || "") && (await page.locator("table[aria-label=生成的短链] tbody tr").count()) === 1000, `${sizes.join("/")}`);
+await page.getByRole("button", { name: "再生成一批" }).click();
+await page.unroute("**/api/links/batch");
+check("「再生成一批」回到单条输入框", (await page.getByRole("textbox", { name: "长链接", exact: true }).count()) === 1);
 check("站名是「短链生成工具」", (await nav.textContent()).includes("短链生成工具"));
 const navLinks = (await nav.getByRole("link").allTextContents()).map((t) => t.trim());
 check("侧栏四项：生成短链、仪表盘、短链访问数据、设置", ["生成短链", "仪表盘", "短链访问数据", "设置"].every((t) => navLinks.some((x) => x.includes(t))), navLinks.join(" / "));

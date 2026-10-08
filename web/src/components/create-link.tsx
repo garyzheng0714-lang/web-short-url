@@ -6,19 +6,14 @@ import { Input } from "@/components/ui/input";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useBootstrap } from "@/app/bootstrap";
 import { api, ApiError, type LinkItem, type Usage } from "@/lib/api";
+import { isBatchPaste, normalizeTarget } from "@/lib/batch";
 import { shortUrlDisplay } from "@/lib/format";
-
-function normalizeTarget(raw: string) {
-  const text = raw.trim();
-  if (!text) return "";
-  if (/^https?:\/\//i.test(text)) return text;
-  if (/^[\w-]+(\.[\w-]+)+/.test(text) && !/\s/.test(text)) return `https://${text}`;
-  return text;
-}
+import { BatchCreate } from "@/components/batch-create";
 
 /**
  * 生成短链：一个输入框 + 一个按钮。域名、分组用设置里的默认值，不在这里摆出来。
  * 输入框与按钮同一行、同高、顶边对齐；出错时下面一行写原因，左缘与输入框同线。额度只在用完时弹窗，平时不显示。
+ * 一次粘贴多条链接时原地展开成批量生成（BatchCreate），没有单独的入口（用户 2026-10-08：「粘贴自动展开就行」）。
  */
 export function CreateLink({ usage, onUsage, onCreated, onShowQr, onOpen, onQuotaExceeded }: {
   usage: Usage;
@@ -35,6 +30,11 @@ export function CreateLink({ usage, onUsage, onCreated, onShowQr, onOpen, onQuot
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<LinkItem | null>(null);
+  const [batchText, setBatchText] = useState<string | null>(null);
+
+  if (batchText !== null) {
+    return <BatchCreate initialText={batchText} usage={usage} onUsage={onUsage} onQuotaExceeded={onQuotaExceeded} onClose={() => setBatchText(null)} />;
+  }
 
   const submit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
@@ -72,9 +72,16 @@ export function CreateLink({ usage, onUsage, onCreated, onShowQr, onOpen, onQuot
           inputMode="url"
           autoComplete="off"
           aria-label="长链接"
-          placeholder="粘贴长链接"
+          placeholder="粘贴长链接，多条可以一次粘贴"
           value={target}
           onChange={(e) => setTarget(e.target.value)}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (!isBatchPaste(text)) return;
+            e.preventDefault();
+            setError("");
+            setBatchText(target.trim() ? `${target.trim()}\n${text}` : text);
+          }}
           aria-invalid={error ? true : undefined}
         />
         <Button type="submit" variant="primary" loading={pending}>

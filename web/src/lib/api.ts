@@ -232,6 +232,14 @@ export interface CreateLinkBody {
   advanced_bot_detection?: boolean;
   webhook?: boolean;
 }
+/** 批量建链的一份（最多 100 条）：分组、域名与开关整份共用 */
+export interface BatchCreateBody extends Omit<CreateLinkBody, "target_url" | "name" | "key"> {
+  items: { target_url: string; name?: string }[];
+}
+export interface BatchCreateResult {
+  items: { index: number; link?: LinkItem; error?: string }[];
+  usage: Usage;
+}
 export type RangeParams = { range?: "7d" | "30d" | "90d"; start?: string; end?: string; bot?: "exclude" | "include" };
 
 // ---------- 调用 ----------
@@ -240,6 +248,7 @@ export const api = {
   listLinks: (p: ListLinksParams) => request<ListLinksResult>(`/api/links${qs(p)}`),
   trends: (ids: number[]) => request<{ start: string; end: string; trends: Record<string, number[]> }>(`/api/links/trends?ids=${ids.join(",")}`),
   createLink: (body: CreateLinkBody) => request<{ link: LinkItem; usage: Usage }>("/api/links", { method: "POST", body: JSON.stringify(body) }),
+  batchCreateLinks: (body: BatchCreateBody) => request<BatchCreateResult>("/api/links/batch", { method: "POST", body: JSON.stringify(body) }),
   usage: () => request<Usage>("/api/usage"),
   getLink: (id: number) => request<{ link: LinkItem }>(`/api/links/${id}`),
   updateLink: (id: number, patch: Partial<{ name: string; target_url: string; escape_from_wechat: boolean; advanced_bot_detection: boolean; webhook: boolean }>) =>
