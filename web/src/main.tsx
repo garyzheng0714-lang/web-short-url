@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Navigate, RouterProvider, useParams } from "react-router-dom";
 import { MotionConfig } from "motion/react";
 import "@fontsource-variable/inter";
-import "@fontsource-variable/noto-sans-sc";
 import "@fontsource/geist-mono/latin-400.css";
 import "@fontsource/geist-mono/latin-500.css";
 import "./styles.css";
@@ -12,8 +11,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Spinner } from "@/components/ui/spinner";
 import { consumeSessionTokenFromHash } from "./lib/session";
 import { AppShell } from "./app/shell";
+import { HomePage } from "./pages/home";
 
-const HomePage = lazy(() => import("./pages/home").then((m) => ({ default: m.HomePage })));
 const SettingsPage = lazy(() => import("./pages/settings").then((m) => ({ default: m.SettingsPage })));
 const Loading = () => (
   <div className="grid h-64 place-items-center">

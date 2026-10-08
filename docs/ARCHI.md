@@ -72,7 +72,7 @@ Express（server.js）
 ├── test/                     node:test：xiaomark / db / sync
 ├── web/                      前端工程（独立 package.json）
 │   ├── src/main.tsx          路由（懒加载）、Provider
-│   ├── src/app/              shell（侧栏 + 主区）、bootstrap 上下文
+│   ├── src/app/              shell（左侧导航栏 + 主区）、bootstrap 上下文
 │   ├── src/pages/            links / link-detail / overview / groups / group-detail / settings
 │   ├── src/components/       create-link、link-actions、stats-panel、qr-dialog、range-control
 │   ├── src/lib/              api.ts（类型 + 调用）、session.ts、format.ts
@@ -236,13 +236,12 @@ tick 默认 5 分钟，`SYNC_INITIAL_DELAY_MS` 后首跑。规模（2026-10-08 �
 
 ## 14. 前端页面与 UI 架构
 
-`web/` 独立工程，两页：`/`（工作页）与 `/settings`。没有侧栏：顶栏只有站名与头像菜单（设置、退出），内容一列居中（`max-w-5xl`，左右 24）。2026-10-08 用户裁定：首页只放一个生成框；概览、列表、分组合在一页，用视图切换；详情一律右侧抽屉。
+`web/` 独立工程，两页：`/`（工作页）与 `/settings`。左侧导航栏 228 宽：站名、「短链 / 分组 / 设置」、底部头像与退出；「短链」「分组」是首页的两种视图（`?view=groups`），所以页面里不再放视图切换。主区内容一列居中（`max-w-5xl`，左右 24）。窄于 768 时侧栏收成顶上一行同样的入口。2026-10-08 用户裁定：首页只放一个生成框（下面不显示默认值与用量）；概览、列表、分组合在一页；详情一律右侧抽屉；要左侧导航栏；不要讲解动画与对比图。
 
 | 区块 | 组成 |
 | --- | --- |
-| 生成 | 标题 +「输入框 + 主按钮」一行（同高同顶）+ 状态行（默认域名 · 默认分组 · 本月已生成 x / y 条，出错时换成错误）；成功后结果条：复制 / 二维码 / 打开。超额弹 `QuotaDialog` |
-| 图解 | `components/short-link-story.tsx`：群聊窗口一镜到底，16 秒一圈、四步（长链接 ✕ → 变短链 ✓ → 换表单要重发 ✕ → 只改跳转 ✓），每处衔接都有东西留下（输入栏的字 → 气泡 → 短链 → 线 → 报名表）。画面是时间的纯函数，帧循环直接写 DOM；Su 的 `MediaFrame`、`StorySteps`（暂停、点步骤）、`flow-path` 拼成，只用语义色。窄于 700 竖排；离开视口、暂停时停，悬停放慢；减少动态时每步一帧静止画面。时钟用 `lib/story-clock.ts`（接口同 `ui/loop-clock`；后者的速率弹簧在 60fps 下发散，暂停或悬停后时间会乱跳，Su 修好后换回） |
-| 数据区 | 工具条：视图 `Segmented`（列表 / 分组）、范围 `Select`（全部 / 我的）、分组筛选的可取消按钮、`SearchField`；三张 `MetricCard`（近 30 天访问带趋势与较上期、今日访问、短链数），随范围与分组变化 |
+| 生成 | 标题 +「输入框 + 主按钮」一行（同高同顶），出错时下面一行写原因；成功后结果条：复制 / 二维码 / 打开。额度平时不显示，用完时弹 `QuotaDialog` |
+| 数据区 | 工具条：范围 `Select`（全部 / 我的）、分组筛选的可取消按钮、`SearchField`（窄时独占一行铺满）；三张 `MetricCard`（近 30 天访问带趋势与较上期、今日访问、短链数），随范围与分组变化 |
 | 列表视图 | `Table flush`：短链（域名灰 + 后缀，下行名称 · 目标）、分组、累计访问（可排序）、近 7 天 `Sparkline`、创建（可排序）、行尾 `⋯`。整行可点开抽屉；列按数据区容器宽度收起（< 768 收分组，< 576 收趋势，< 448 收创建） |
 | 分组视图 | `Table flush`：分组、短链、被访问、累计访问、归属人；点行开分组抽屉 |
 | 短链抽屉 | `LinkDrawer` + `LinkDetail`：元信息与认领、操作（复制、二维码、打开、跳转链路、编辑、暂停 / 恢复）、时间范围与含机器访问、四张指标卡、`StatsPanel`、访问记录分页 |
@@ -259,7 +258,7 @@ tick 默认 5 分钟，`SYNC_INITIAL_DELAY_MS` 后首跑。规模（2026-10-08 �
 
 ## 16. 样式
 
-只用 `@su/theme` 的 `ds-tokens.css` / `ds-theme.css` 与语义类（`bg-canvas`、`text-fg-muted`、`rounded-card`…），业务代码不写色值与像素；字体 Inter + Noto Sans SC + Geist Mono 随包。登录页仍是独立的内联样式（见技术债）。
+只用 `@su/theme` 的 `ds-tokens.css` / `ds-theme.css` 与语义类（`bg-canvas`、`text-fg-muted`、`rounded-card`…），业务代码不写色值与像素；字体 Inter + Geist Mono 随包；中文用系统字体（苹方 / 微软雅黑），不再打包 Noto Sans SC——它按字切成上百个子集，在约 90KB/s 的出口上首屏要多下几百 KB。登录页仍是独立的内联样式（见技术债）。
 
 ---
 

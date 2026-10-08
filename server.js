@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import QRCode from "qrcode";
 
 import { openDatabase, statementCache, localUserId } from "./lib/db.js";
@@ -100,6 +101,8 @@ try {
 const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
+// 服务器出口只有约 90KB/s：接口 JSON 与页面按需 gzip；/assets 发构建时预压缩的文件（见 sendPrecompressed）
+app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: "256kb" }));
 app.use(cookieParser());
 
@@ -297,7 +300,38 @@ function sendHtml(res, file) {
 }
 app.get("/login", (_req, res) => sendHtml(res, path.join(PUBLIC_DIR, "login.html")));
 app.use("/mascots", express.static(path.join(PUBLIC_DIR, "mascots"), { maxAge: "7d" }));
+/** 构建产物带内容哈希：有 .br / .gz 且浏览器接受时直接发压缩版，类型按原文件，永久缓存 */
+function sendPrecompressed(root) {
+  const real = path.resolve(root);
+  return (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    let rel;
+    try {
+      rel = decodeURIComponent(req.path);
+    } catch {
+      return next();
+    }
+    const file = path.resolve(real, `.${rel}`);
+    if (!file.startsWith(real + path.sep)) return next();
+    // Accept-Encoding 里列出且 q 不为 0 的编码
+    const accepted = new Set(
+      String(req.headers["accept-encoding"] || "")
+        .split(",")
+        .map((part) => part.trim().split(";"))
+        .filter(([, q]) => !q || Number(q.trim().replace(/^q=/, "")) > 0)
+        .map(([name]) => name.trim().toLowerCase()),
+    );
+    for (const [enc, ext] of [["br", ".br"], ["gzip", ".gz"]]) {
+      if (!accepted.has(enc) || !fs.existsSync(file + ext)) continue;
+      res.set({ "Content-Encoding": enc, Vary: "Accept-Encoding", "Cache-Control": "public, max-age=31536000, immutable" });
+      res.type(path.extname(file));
+      return res.sendFile(file + ext);
+    }
+    next();
+  };
+}
 if (fs.existsSync(WEB_DIST)) {
+  app.use("/assets", sendPrecompressed(path.join(WEB_DIST, "assets")));
   app.use("/assets", express.static(path.join(WEB_DIST, "assets"), { immutable: true, maxAge: "365d", fallthrough: false }));
   app.use(express.static(WEB_DIST, { index: false, maxAge: "1h" }));
 }

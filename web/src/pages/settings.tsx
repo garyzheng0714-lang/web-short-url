@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -60,16 +57,8 @@ export function SettingsPage() {
   const domains = [...new Set([...boot.domains.map((d) => d.domain), boot.default_domain_fallback])];
 
   return (
-    <div className="grid gap-10 pt-6">
-      <div className="grid justify-items-start gap-2">
-        <Button asChild variant="ghost" size="sm" className="edge-start">
-          <Link to="/">
-            <ArrowLeft aria-hidden />
-            返回
-          </Link>
-        </Button>
-        <h1 className="text-2xl font-semibold">设置</h1>
-      </div>
+    <div className="grid gap-10 pt-10">
+      <h1 className="text-2xl font-semibold">设置</h1>
 
       <section className="grid max-w-xl gap-6" aria-labelledby="s-defaults">
         <h3 id="s-defaults" className="text-sm font-medium">

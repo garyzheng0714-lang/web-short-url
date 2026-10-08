@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
-import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchField } from "@/components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { CreateLink } from "@/components/create-link";
-import { ShortLinkStory } from "@/components/short-link-story";
 import { QuotaDialog } from "@/components/quota-dialog";
 import { QrDialog } from "@/components/qr-dialog";
 import { LinkDrawer } from "@/components/link-drawer";
@@ -167,7 +165,7 @@ export function HomePage() {
   const filtered = Boolean(group || q);
 
   return (
-    <div className="grid gap-16 pt-10">
+    <div className="grid gap-12 pt-10">
       <section aria-labelledby="create-title" className="grid gap-4">
         <h1 id="create-title" className="text-2xl font-semibold">
           生成短链
@@ -175,22 +173,8 @@ export function HomePage() {
         <CreateLink usage={usage} onUsage={setUsage} onCreated={onCreated} onShowQr={setQrUrl} onOpen={openLink} onQuotaExceeded={() => setQuotaOpen(true)} />
       </section>
 
-      <section aria-label="短链是什么">
-        <ShortLinkStory />
-      </section>
-
       <section aria-label="我的短链数据" className="@container/data grid gap-6">
         <div className="flex flex-wrap items-center gap-2">
-          <Segmented
-            aria-label="视图"
-            group="home-view"
-            value={view}
-            onValueChange={(v) => update({ view: v === "groups" ? "groups" : null, group: null })}
-            items={[
-              { value: "list", label: "列表" },
-              { value: "groups", label: "分组" },
-            ]}
-          />
           <Select value={scope} onValueChange={(v) => update({ scope: v === "mine" ? "mine" : null })}>
             <SelectTrigger aria-label="范围" className="w-32">
               <SelectValue />
@@ -207,7 +191,7 @@ export function HomePage() {
             </Button>
           ) : null}
           <SearchField
-            className="ml-auto w-64"
+            className="w-full @xl/data:ml-auto @xl/data:w-64"
             placeholder={view === "list" ? "搜索短链、目标或名称" : "搜索分组"}
             value={text}
             onChange={(e) => setText(e.target.value)}

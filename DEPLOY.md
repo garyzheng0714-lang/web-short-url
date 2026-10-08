@@ -54,6 +54,8 @@ node scripts/sync.mjs totals                      # 一次补齐 1 万条累计�
 
 Caddy 站点块在 `/etc/caddy/sites/garyzheng-tools.caddy`：`shorturl.garyzheng.com` 反代 `127.0.0.1:3010`，证书自动签发。服务端 `trust proxy` 已开，`X-Forwarded-Proto` 决定 cookie 的 `Secure`。
 
+服务器出口很窄（2026-10-08 实测下载约 90KB/s），Caddy 这一段没开压缩，压缩在应用里做：`web` 构建时 `scripts/compress.mjs` 给 `dist/assets` 的文本资源生成 `.br` / `.gz`，`server.js` 按 `Accept-Encoding` 直接发预压缩文件（Caddy 原样转发）；接口与页面走 `compression` 中间件（≥ 1KB 才压）。依赖单独打成 `vendor` 包，只改页面代码的部署不让用户重新下载它。验证：`curl -sI -H 'Accept-Encoding: br' https://shorturl.garyzheng.com/assets/<vendor 包名>` 应带 `content-encoding: br`。
+
 ## 6. 机器可执行验收
 
 ```bash

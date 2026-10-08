@@ -18,7 +18,7 @@ function normalizeTarget(raw: string) {
 
 /**
  * 生成短链：一个输入框 + 一个按钮。域名、分组用设置里的默认值，不在这里摆出来。
- * 输入框与按钮同一行、同高、顶边对齐；下面一行是状态（用量或错误），左缘与输入框同线。
+ * 输入框与按钮同一行、同高、顶边对齐；出错时下面一行写原因，左缘与输入框同线。额度只在用完时弹窗，平时不显示。
  */
 export function CreateLink({ usage, onUsage, onCreated, onShowQr, onOpen, onQuotaExceeded }: {
   usage: Usage;
@@ -85,11 +85,7 @@ export function CreateLink({ usage, onUsage, onCreated, onShowQr, onOpen, onQuot
         <p role="alert" className="text-xs text-danger">
           {error}
         </p>
-      ) : (
-        <p className="text-xs text-fg-muted tabular-nums">
-          {domain} · {group?.name || "未选分组"} · 本月已生成 {usage.used} / {usage.limit} 条
-        </p>
-      )}
+      ) : null}
       {created ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-row bg-well py-1 pr-1 pl-3" role="status">
           <button type="button" className="min-w-0 truncate text-sm font-medium text-fg hover:underline" onClick={() => onOpen(created)}>

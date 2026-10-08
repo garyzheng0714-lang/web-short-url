@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 真实浏览器走查：本机 Chrome 打开首页，走一遍生成、列表 / 分组视图、详情与分组抽屉、额度弹窗、设置、窄屏；截图 + 报错汇总 + 对齐量测；短链图解的逐格检查另见 story-check.mjs。
+// 真实浏览器走查：本机 Chrome 打开首页，走一遍侧栏、生成、列表 / 分组视图、详情与分组抽屉、额度弹窗、设置、窄屏；截图 + 报错汇总 + 对齐量测。
 // 用法：SESSION_TOKEN=<token> BASE_URL=http://127.0.0.1:3000 node scripts/ui-check.mjs [--no-create] [--quota]
 //   --no-create 不真的建链（不消耗小码额度）
 //   --quota     额度弹窗：需要事先把这个测试账号的额度调成已用完
@@ -37,7 +37,8 @@ const settle = async (ms = 500) => {
 const shot = async (name, full = true) => {
   const vp = page.viewportSize();
   if (full && vp) {
-    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    // 页面在主栏里滚动（侧栏布局），按主栏内容高撑开视口
+    const h = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, (document.querySelector("main")?.parentElement?.scrollHeight || 0) + 64));
     await page.setViewportSize({ width: vp.width, height: Math.min(5000, Math.max(vp.height, h)) });
     await page.waitForTimeout(300);
   }
@@ -56,24 +57,22 @@ await shot("01-home");
 const input = await box(page.locator("[data-slot=input-shell]").first());
 const btn = await box(page.getByRole("button", { name: "生成短链" }));
 const title = await box(page.getByRole("heading", { name: "生成短链" }));
-const meta = await box(page.getByText(/本月已生成/).first());
-const seg = await box(page.locator("[data-slot=segmented]").first());
+const scopeSel = await box(page.getByRole("combobox", { name: "范围" }));
 const search = await box(page.locator("input[type=search], [data-slot=search-field] input").first());
 check("输入框与按钮同高", Math.abs(input.height - btn.height) <= 0.5, `${input.height} / ${btn.height}`);
 check("输入框与按钮顶边对齐", Math.abs(input.y - btn.y) <= 0.5, `${input.y} / ${btn.y}`);
-check("标题、输入框、状态行、视图切换左缘同线", [title.x, meta.x, seg.x].every((x) => Math.abs(x - input.x) <= 1.5), `标题 ${title.x} 输入 ${input.x} 状态 ${meta.x} 切换 ${seg.x}`);
+check("标题、输入框、工具条左缘同线", [title.x, scopeSel.x].every((x) => Math.abs(x - input.x) <= 1.5), `标题 ${title.x} 输入 ${input.x} 工具条 ${scopeSel.x}`);
+check("生成框下面没有默认值与用量那一行", (await page.getByText(/本月已生成/).count()) === 0);
+const nav = page.getByRole("navigation", { name: "工作区" });
+const navLinks = await nav.getByRole("link").allTextContents();
+check("左侧导航栏：短链、分组、设置", ["短链", "分组", "设置"].every((t) => navLinks.some((x) => x.includes(t))), navLinks.join(" / "));
+check("侧栏当前项是「短链」", (await nav.getByRole("link", { name: "短链" }).getAttribute("aria-current")) === "page");
+const navBox = await box(nav);
+check("侧栏在内容左侧、不压住内容", navBox.x + navBox.width <= title.x, `侧栏右缘 ${navBox.x + navBox.width} / 内容左缘 ${title.x}`);
 const btnRight = btn.x + btn.width;
 const searchShell = await box(page.locator("[data-slot=search-field]").first()).catch(() => null);
 const sr = searchShell || search;
 check("按钮右缘与搜索框右缘同线", Math.abs(btnRight - (sr.x + sr.width)) <= 1.5, `${btnRight} / ${sr.x + sr.width}`);
-// 图解：在视口里会动、左缘与输入框同线（逐格的衔接、节奏与减少动态在 scripts/story-check.mjs）
-const story = page.locator("[data-slot=short-link-story]");
-await story.evaluate((el) => el.scrollIntoView({ block: "center" }));
-await page.waitForTimeout(600);
-check("短链图解在视口里播放", (await story.locator("> [role=img]").getAttribute("data-running")) !== null);
-const storyBox = await box(story);
-check("图解左缘与输入框同线", Math.abs(storyBox.x - input.x) <= 1.5, `${storyBox.x} / ${input.x}`);
-await page.evaluate(() => window.scrollTo(0, 0));
 
 let createdUrl = "";
 if (CREATE) {
@@ -106,8 +105,9 @@ await page.waitForTimeout(600);
 check("Esc 关闭后地址去掉 link", !/[?&]link=/.test(page.url()), page.url().replace(BASE, ""));
 
 console.log("4. 分组视图与分组抽屉");
-await page.getByRole("radio", { name: "分组" }).click();
+await nav.getByRole("link", { name: "分组" }).click();
 await settle();
+check("侧栏「分组」切到分组视图", /[?&]view=groups/.test(page.url()) && (await nav.getByRole("link", { name: "分组" }).getAttribute("aria-current")) === "page", page.url().replace(BASE, ""));
 await page.getByRole("table").waitFor();
 await shot("04-groups-view", false);
 await page.getByRole("row").nth(1).click();
@@ -117,6 +117,7 @@ await shot("05-group-drawer", false);
 await dialog.getByRole("button", { name: "查看组内短链" }).click();
 await settle();
 check("「查看组内短链」切回列表并按分组筛选", /[?&]group=/.test(page.url()) && !/view=groups/.test(page.url()), page.url().replace(BASE, ""));
+check("回到列表后侧栏当前项是「短链」", (await nav.getByRole("link", { name: "短链" }).getAttribute("aria-current")) === "page");
 await shot("06-list-filtered", false);
 
 if (QUOTA) {
@@ -141,7 +142,8 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.goto(`${BASE}/`);
 await settle(800);
 await shot("09-home-mobile");
-check("390 宽无横向溢出", (await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0);
+check("390 宽无横向溢出", (await page.evaluate(() => { const pane = document.querySelector("main")?.parentElement; return Math.max(document.documentElement.scrollWidth - document.documentElement.clientWidth, pane ? pane.scrollWidth - pane.clientWidth : 0); })) <= 0);
+check("390 宽侧栏收起、顶上一行入口", !(await nav.isVisible()) && (await page.getByRole("link", { name: "分组" }).first().isVisible()));
 const firstCell = await box(page.getByRole("row").nth(1).getByRole("cell").first());
 check("390 宽列表的短链列宽 ≥ 160", (firstCell?.width || 0) >= 160, String(firstCell?.width));
 await page.goto(`${BASE}/?link=2708`);
