@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, Pause, Pencil, Play, QrCode, Route, UserRoundPlus } from "lucide-react";
+import { Ellipsis, ExternalLink, Pause, Pencil, Play, QrCode, Route, UserRoundPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Tag } from "@/components/ui/tag";
@@ -11,7 +11,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { StatsPanel } from "@/components/stats-panel";
 import { QrDialog } from "@/components/qr-dialog";
 import { BotSwitch, RangeSegmented, rangeLabel, type RangeKey } from "@/components/range-control";
@@ -24,8 +24,9 @@ const STATUS_TAG: Record<string, "neutral" | "success" | "warning" | "danger"> =
 const VISITS_PAGE = 20;
 
 /**
- * 一条短链的详情与数据。放在抽屉里（列表页 ?link=id），不独占页面。
- * 头部的短链地址由抽屉标题承担，这里从目标链接开始。
+ * 一条短链的详情与数据。放在抽屉里（?link=id），不独占页面；短链地址与目标链接由抽屉标题和副标题承担。
+ * 排法照 Dub、Bitly 的链接详情：最常用的两个动作（复制、二维码）在前，其余收进「⋯」；属性是一张标签 · 值的小表；
+ * 「访问数据」一节自己带时间范围与含机器访问；指标三个，名字里不再重复时间范围。
  */
 export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: LinkItem) => void }) {
   const uid = useId();
@@ -119,82 +120,110 @@ export function LinkDetail({ id, onChanged }: { id: number; onChanged?: (link: L
 
   return (
     <div className="@container/detail grid gap-8">
-      <div className="grid gap-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-          {link.status !== "active" ? (
-            <Tag variant={STATUS_TAG[link.status]} className="text-sm text-fg">
-              {STATUS_LABEL[link.status]}
-            </Tag>
-          ) : null}
-          {link.name && !/^短链/.test(link.name) ? <span className="text-fg">{link.name}</span> : null}
-          <Link to={`/data?group=${encodeURIComponent(link.group_id || "")}`} className="hover:text-fg">
-            {link.group_name || "未分组"}
-          </Link>
-          {link.creator ? (
-            <span className="flex items-center gap-1">
-              <Avatar name={link.creator.name || "用户"} src={link.creator.avatar_url || undefined} size={16} shape="circle" />
-              {link.creator.name}
-            </span>
-          ) : (
-            <Button variant="ghost" size="sm" className="-mx-2 h-6" onClick={() => void claimLink(link, setLink)}>
-              <UserRoundPlus aria-hidden />
-              认领到我名下
-            </Button>
-          )}
-          <span className="tabular-nums">创建于 {fmtDateTime(link.created_at)}</span>
-          {link.stats.fetched_at ? <span>数据更新于 {relativeTime(link.stats.fetched_at)}</span> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="grid gap-6">
+        <div className="flex items-center gap-2">
           <CopyButton value={link.link_url} label="复制短链" variant="secondary" size="md" />
           <Button variant="secondary" onClick={() => setQrUrl(link.link_url)}>
             <QrCode aria-hidden />
             二维码
           </Button>
-          <Tooltip content="打开短链">
-            <Button asChild variant="secondary" size="icon" aria-label="打开短链">
-              <a href={`/go?url=${encodeURIComponent(link.link_url)}`} target="_blank" rel="noreferrer">
-                <ExternalLink />
-              </a>
-            </Button>
-          </Tooltip>
-          <Tooltip content="查看跳转链路">
-            <Button variant="secondary" size="icon" aria-label="查看跳转链路" onClick={() => void resolveRoute()}>
-              <Route />
-            </Button>
-          </Tooltip>
-          {link.can_manage ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="secondary" size="icon" aria-label="更多操作">
+                <Ellipsis />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onSelect={() => window.open(`/go?url=${encodeURIComponent(link.link_url)}`, "_blank", "noopener,noreferrer")}>
+                <ExternalLink aria-hidden />
+                打开短链
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void resolveRoute()}>
+                <Route aria-hidden />
+                查看跳转链路
+              </DropdownMenuItem>
+              {link.can_manage ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setEditing(link)}>
+                    <Pencil aria-hidden />
+                    编辑
+                  </DropdownMenuItem>
+                  {link.status === "banned" ? null : (
+                    <DropdownMenuItem onSelect={() => void toggleSuspend(link, setLink)}>
+                      {link.status === "suspended" ? <Play aria-hidden /> : <Pause aria-hidden />}
+                      {link.status === "suspended" ? "恢复跳转" : "暂停跳转"}
+                    </DropdownMenuItem>
+                  )}
+                </>
+              ) : null}
+              {!link.creator && boot.user.is_admin ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => void claimLink(link, setLink)}>
+                    <UserRoundPlus aria-hidden />
+                    认领到我名下
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+          {link.status !== "active" ? (
             <>
-              <Tooltip content="编辑名称、目标链接与开关">
-                <Button variant="secondary" size="icon" aria-label="编辑" onClick={() => setEditing(link)}>
-                  <Pencil />
-                </Button>
-              </Tooltip>
-              {link.status === "banned" ? null : (
-                <Tooltip content={link.status === "suspended" ? "恢复跳转" : "暂停跳转"}>
-                  <Button variant="secondary" size="icon" aria-label={link.status === "suspended" ? "恢复跳转" : "暂停跳转"} onClick={() => void toggleSuspend(link, setLink)}>
-                    {link.status === "suspended" ? <Play /> : <Pause />}
-                  </Button>
-                </Tooltip>
-              )}
+              <dt className="text-fg-muted">状态</dt>
+              <dd>
+                <Tag variant={STATUS_TAG[link.status]}>{STATUS_LABEL[link.status]}</Tag>
+              </dd>
             </>
           ) : null}
+          {link.name && !/^短链/.test(link.name) ? (
+            <>
+              <dt className="text-fg-muted">名称</dt>
+              <dd className="truncate">{link.name}</dd>
+            </>
+          ) : null}
+          <dt className="text-fg-muted">分组</dt>
+          <dd className="truncate">
+            <Link to={`/data?group=${encodeURIComponent(link.group_id || "")}`} className="hover:underline">
+              {link.group_name || "未分组"}
+            </Link>
+          </dd>
+          <dt className="text-fg-muted">创建者</dt>
+          <dd className="flex min-w-0 items-center gap-1.5">
+            {link.creator ? (
+              <>
+                <Avatar name={link.creator.name || "用户"} src={link.creator.avatar_url || undefined} size={16} shape="circle" />
+                <span className="truncate">{link.creator.name}</span>
+              </>
+            ) : (
+              <span className="text-fg-muted">无</span>
+            )}
+          </dd>
+          <dt className="text-fg-muted">创建时间</dt>
+          <dd className="tabular-nums">{fmtDateTime(link.created_at)}</dd>
+        </dl>
+      </div>
+
+      <section aria-labelledby={`${uid}-data`} className="grid gap-6">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h3 id={`${uid}-data`} className="mr-auto text-sm font-medium">
+            访问数据
+            {link.stats.fetched_at ? <span className="ml-2 text-xs font-normal text-fg-muted">更新于 {relativeTime(link.stats.fetched_at)}</span> : null}
+          </h3>
+          <BotSwitch includeBots={includeBots} onChange={setIncludeBots} />
+          <RangeSegmented group={`${uid}-range`} value={range} onChange={setRange} />
         </div>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <RangeSegmented group={`${uid}-range`} value={range} onChange={setRange} />
-        <BotSwitch includeBots={includeBots} onChange={setIncludeBots} />
-        {stats?.realtime.events ? <span className="ml-auto text-xs text-fg-muted">实时事件 {formatNumber(stats.realtime.events)} 条 · 最近 {relativeTime(stats.realtime.last_visit_at)}</span> : null}
-      </div>
-
-      <div role="group" aria-label="指标" className="grid grid-cols-2 gap-6 @2xl/detail:grid-cols-4">
-        <MetricCard label={`${period}访问`} value={stats?.period.visit_count ?? 0} loading={statsState === "loading" && !stats} context={period} />
-        <MetricCard label={`${period}访客`} value={stats?.period.visitor_count ?? 0} loading={statsState === "loading" && !stats} context={`IP ${formatNumber(stats?.period.ip_count ?? 0)}`} />
-        <MetricCard label="新访客" value={stats?.chart.new_visitor_count ?? 0} loading={statsState === "loading" && !stats} context={period} />
-        <MetricCard label="累计访问" value={link.stats.visit_count} context={`访客 ${formatNumber(link.stats.visitor_count)} · IP ${formatNumber(link.stats.ip_count)}`} />
-      </div>
-
-      <StatsPanel daily={stats?.daily || []} chart={stats?.chart || null} period={period} loading={statsState === "loading" && !stats} error={statsState === "error" ? statsError : undefined} onRetry={() => void loadStats()} />
+        <div role="group" aria-label="指标" className="grid grid-cols-3 gap-6">
+          <MetricCard label="访问" value={stats?.period.visit_count ?? 0} loading={statsState === "loading" && !stats} context={`IP ${formatNumber(stats?.period.ip_count ?? 0)}`} />
+          <MetricCard label="访客" value={stats?.period.visitor_count ?? 0} loading={statsState === "loading" && !stats} context={`新访客 ${formatNumber(stats?.chart.new_visitor_count ?? 0)}`} />
+          <MetricCard label="累计访问" value={link.stats.visit_count} context={`访客 ${formatNumber(link.stats.visitor_count)}`} />
+        </div>
+        <StatsPanel daily={stats?.daily || []} chart={stats?.chart || null} period={period} loading={statsState === "loading" && !stats} error={statsState === "error" ? statsError : undefined} onRetry={() => void loadStats()} />
+      </section>
 
       <section aria-labelledby={`${uid}-visits`} className="grid gap-2">
         <h3 id={`${uid}-visits`} className="flex h-(--ds-h-md) items-center text-sm font-medium">

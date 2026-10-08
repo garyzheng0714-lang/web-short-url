@@ -4,10 +4,7 @@ import { ChartNoAxesColumn, ChevronRight, CornerDownRight, FolderOpen, Globe, X 
 import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchField } from "@/components/ui/search-field";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
-import { MetricCard } from "@/components/ui/metric-card";
-import { LineChart } from "@/components/ui/line-chart";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Tag } from "@/components/ui/tag";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,85 +15,15 @@ import { QrDialog } from "@/components/qr-dialog";
 import { LinkDrawer } from "@/components/link-drawer";
 import { GroupDrawer } from "@/components/group-drawer";
 import { EditLinkDrawer, LinkRowMenu } from "@/components/link-actions";
-import { RANGE_ITEMS, rangeLabel, type RangeKey } from "@/components/range-control";
-import { toLineData } from "@/components/stats-panel";
 import { useBootstrap } from "@/app/bootstrap";
-import { api, type GroupItem, type LinkItem, type ListLinksResult, type Overview } from "@/lib/api";
-import { STATUS_LABEL, changeRatio, fmtDateShort, formatCount, shortUrlDisplay } from "@/lib/format";
+import { api, type GroupItem, type LinkItem, type ListLinksResult } from "@/lib/api";
+import { STATUS_LABEL, fmtDateShort, formatCount, shortUrlDisplay } from "@/lib/format";
 
 const PAGE_SIZE = 20;
 const STATUS_TAG: Record<string, "neutral" | "warning" | "danger"> = { suspended: "warning", banned: "danger", missing: "neutral" };
 
 function pageWindow(current: number, pages: number) {
   return [...new Set([1, pages, current, current - 1, current + 1])].filter((p) => p >= 1 && p <= pages).sort((a, b) => a - b);
-}
-
-/** 概览：四张指标卡 + 每日访问卡。范围随「全部 / 我的」（只有管理员有）、时间、分组筛选变化 */
-function OverviewCards({ scope, range, group }: { scope: "all" | "mine"; range: RangeKey; group: string }) {
-  const [data, setData] = useState<Overview | null>(null);
-  const [error, setError] = useState("");
-  const load = useCallback(() => {
-    let cancelled = false;
-    setData(null);
-    setError("");
-    api
-      .overview({ range, scope, group: group || undefined })
-      .then((r) => !cancelled && setData(r))
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "加载失败"));
-    return () => {
-      cancelled = true;
-    };
-  }, [scope, range, group]);
-  useEffect(load, [load]);
-  const loading = !data && !error;
-  const k = data?.kpi;
-  const period = rangeLabel(range);
-  return (
-    <>
-      <div role="group" aria-label="概览" className="grid grid-cols-2 gap-4 @3xl/data:grid-cols-4">
-        <Card>
-          <CardContent>
-            <MetricCard label={`${period}访问`} value={k?.period_visits ?? 0} change={changeRatio(k?.period_visits ?? 0, data?.previous?.visit_count)} changeLabel="较上期" loading={loading} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <MetricCard label={`${period}访客`} value={k?.period_visitors ?? 0} change={changeRatio(k?.period_visitors ?? 0, data?.previous?.visitor_count)} changeLabel="较上期" loading={loading} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <MetricCard label="今日访问" value={k?.today_visits ?? 0} context={`访客 ${formatCount(k?.today_visitors ?? 0)}`} loading={loading} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <MetricCard label="短链" value={k?.total_links ?? 0} context={`${formatCount(k?.visited_links ?? 0)} 条被访问过`} loading={loading} />
-          </CardContent>
-        </Card>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">每日访问</CardTitle>
-          <CardDescription>{data?.series_note || `${period}，不含机器访问`}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <LineChart
-            label={`每日访问，${period}`}
-            data={toLineData(data?.series || [])}
-            series={[
-              { key: "visits", label: "访问次数" },
-              { key: "visitors", label: "访客数", dashed: true },
-            ]}
-            height={240}
-            loading={loading}
-            error={error || undefined}
-            onRetry={load}
-          />
-        </CardContent>
-      </Card>
-    </>
-  );
 }
 
 /** 列表容器：一块白底柔影的面，行之间一条细线；行的悬停底贴到面的圆角里 */
@@ -182,14 +109,13 @@ function GroupRow({ group, onOpen }: { group: GroupItem; onOpen: (g: GroupItem) 
   );
 }
 
-/** 短链访问数据：概览卡 + 每日访问卡，下面是短链卡片（或分组卡片）。成员只看得到自己创建的短链（服务端强制） */
+/** 短链访问数据：纯列表（短链 / 分组两种视图），数据概览在「仪表盘」。成员只看得到自己创建的短链（服务端强制） */
 export function DataPage() {
   const { data: boot } = useBootstrap();
   const admin = boot.user.is_admin;
   const [params, setParams] = useSearchParams();
   const view = params.get("view") === "groups" ? "groups" : "list";
   const scope = admin && params.get("scope") === "mine" ? "mine" : admin ? "all" : "mine";
-  const range = (RANGE_ITEMS.some((r) => r.value === params.get("range")) ? params.get("range") : "30d") as RangeKey;
   const group = params.get("group") || "";
   const q = params.get("q") || "";
   const page = Math.max(1, Number(params.get("page")) || 1);
@@ -266,7 +192,7 @@ export function DataPage() {
   const filtered = Boolean(group || q);
 
   return (
-    <div className="cards @container/data grid gap-6 pt-10">
+    <div className="@container/data grid gap-6 pt-10">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold">短链访问数据</h1>
         {admin ? (
@@ -281,10 +207,7 @@ export function DataPage() {
             ]}
           />
         ) : null}
-        <Segmented aria-label="时间范围" group="data-range" value={range} onValueChange={(v) => update({ range: v === "30d" ? null : v }, true)} items={RANGE_ITEMS} />
       </header>
-
-      <OverviewCards scope={scope} range={range} group={group} />
 
       <section aria-label={view === "list" ? "短链" : "分组"} className="grid gap-4">
         <div className="flex flex-wrap items-center gap-2">

@@ -12,6 +12,7 @@ import { consumeSessionTokenFromHash } from "./lib/session";
 import { AppShell } from "./app/shell";
 import { CreatePage } from "./pages/create";
 import { DataPage } from "./pages/data";
+import { DashboardPage } from "./pages/dashboard";
 import { SettingsPage } from "./pages/settings";
 
 // 旧地址：详情、分组都在「短链访问数据」页的抽屉里（页面都不懒加载，切换不闪加载态）
@@ -30,12 +31,13 @@ const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <CreatePage /> },
+      { path: "dashboard", element: <DashboardPage /> },
       { path: "data", element: <DataPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "links/:id", element: <LinkRedirect /> },
       { path: "groups/:id", element: <GroupRedirect /> },
       { path: "groups", element: <Navigate replace to="/data?view=groups" /> },
-      { path: "overview", element: <Navigate replace to="/data" /> },
+      { path: "overview", element: <Navigate replace to="/dashboard" /> },
       { path: "*", element: <Navigate replace to="/" /> },
     ],
   },
