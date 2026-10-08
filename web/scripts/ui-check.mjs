@@ -109,10 +109,13 @@ const lines = await page.evaluate(() => {
   const avatar = r(acct?.querySelector("[data-slot=avatar]"));
   const name = r(acct?.querySelector("span.truncate"));
   const header = r(document.querySelector("[data-slot=sidebar-header]"));
-  return { markC: mark.x + mark.width / 2, iconC: icon.x + icon.width / 2, avatarC: avatar.x + avatar.width / 2, brandX: brand.x, labelX: label.x, nameX: name.x, gap: item.y - (header.y + header.height), nav: Boolean(nav) };
+  const role = acct?.querySelector("[data-part=role]");
+  return { markC: mark.x + mark.width / 2, iconC: icon.x + icon.width / 2, avatarC: avatar.x + avatar.width / 2, markGap: brand.x - (mark.x + mark.width), avatarGap: name.x - (avatar.x + avatar.width), brandX: brand.x, nameX: name.x, role: role?.textContent || "", acctIcons: acct ? acct.querySelectorAll("svg").length : -1, gap: item.y - (header.y + header.height), nav: Boolean(nav) };
 });
 check("站标、导航图标、头像的中心同一条竖线", Math.abs(lines.markC - lines.iconC) <= 0.5 && Math.abs(lines.avatarC - lines.iconC) <= 0.5, `${lines.markC} / ${lines.iconC} / ${lines.avatarC}`);
-check("站名、导航文字、用户名的起点同一条竖线", Math.abs(lines.brandX - lines.labelX) <= 1 && Math.abs(lines.nameX - lines.labelX) <= 1, `${lines.brandX} / ${lines.labelX} / ${lines.nameX}`);
+check("站标与站名、头像与名字都隔 8", Math.abs(lines.markGap - 8) <= 1 && Math.abs(lines.avatarGap - 8) <= 1, `${lines.markGap} / ${lines.avatarGap}`);
+check("站名与用户名起点同一条竖线", Math.abs(lines.brandX - lines.nameX) <= 1, `${lines.brandX} / ${lines.nameX}`);
+check("账号行显示当前权限、没有箭头图标", ["管理员", "成员"].includes(lines.role.trim()) && lines.acctIcons === 0, `${lines.role} · 图标 ${lines.acctIcons}`);
 check("站名行与第一个导航项之间有间距", lines.gap >= 8, `${lines.gap}px`);
 // 折叠钮（Su Sidebar 自己画在第一栏右上角）：宽屏正文顶栏里没有按钮；展开时指向侧栏才显出来；收起后留 56 宽窄栏、按钮常驻顶部；不做悬停浮出
 const toggleWrap = page.locator("[data-slot=sidebar-toggle]");
@@ -251,9 +254,19 @@ check("抽屉动作只有复制、二维码和「更多」", (await Promise.all(
 check("抽屉属性是一张标签 · 值的小表", (await dialog.locator("dl dt").count()) >= 3);
 check("指标名里不重复时间范围", (await dialog.getByRole("group", { name: "指标" }).textContent()).includes("近 30 天") === false);
 await shot("05-link-drawer", false);
+const drawerX0 = (await box(dialog)).x;
+const moreBox = await box(dialog.getByRole("button", { name: "更多操作" }));
 await dialog.getByRole("button", { name: "更多操作" }).click();
 await page.getByRole("menuitem", { name: "查看跳转链路" }).waitFor({ timeout: 5000 });
 check("「更多」里有打开、跳转链路等", (await page.getByRole("menuitem", { name: "打开短链" }).count()) === 1);
+// 2026-10-08 用户：「我鼠标移动一下，他就往外缩一下」——菜单开着时从 ⋯ 斜着移向菜单项，抽屉不能跟着鼠标走
+for (let i = 1; i <= 12; i++) {
+  await page.mouse.move(moreBox.x + moreBox.width / 2 + i * 6, moreBox.y + moreBox.height / 2 + i * 3.5);
+  await page.waitForTimeout(16);
+}
+await page.waitForTimeout(300);
+const drawerX1 = (await box(dialog)).x;
+check("菜单开着时移向菜单项，抽屉不跟着鼠标走", Math.abs(drawerX1 - drawerX0) <= 0.5, `抽屉左缘 ${drawerX0} → ${drawerX1}`);
 const pauseItem = page.getByRole("menuitem", { name: /暂停跳转|恢复跳转/ });
 if (await pauseItem.count()) {
   await pauseItem.click();
