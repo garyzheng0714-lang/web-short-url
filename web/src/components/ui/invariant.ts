@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 
 /**
@@ -71,6 +69,23 @@ export function useGeometryInvariant<T extends HTMLElement>(component: string, r
 /** 尺寸容器必须从宿主获得宽度；否则 truncate、百分比轨道会一起消失。 */
 export function contentWidth(el: HTMLElement) {
   return el.getBoundingClientRect().width < 24 ? "可见组件宽度不足 24px，内容或轨道会隐身；根节点必须从宿主获得宽度" : null
+}
+
+/**
+ * 一排并排的同类项结构相同（DESIGN.md 红线 9）：同一排的指标卡要么都带趋势线、要么都不带。
+ * 2026-10-08 短链首页：三格指标只有第一格带折线，另两格下面空着；它没用 MetricGroup，所以按 DOM 找同排：
+ * 往上至多两层，找到第一个有 ≥ 2 个子项各含一张指标卡的容器，比较每项里有没有 [data-slot=metric-sparkline]。
+ */
+export function sameShapeRow(el: HTMLElement) {
+  for (let node: HTMLElement | null = el, depth = 0; node?.parentElement && depth < 3; node = node.parentElement, depth++) {
+    const items = [...node.parentElement.children].filter((c) => c.matches("[data-slot=metric-card]") || c.querySelector("[data-slot=metric-card]"))
+    if (items.length < 2) continue
+    const withTrend = items.filter((c) => c.querySelector("[data-slot=metric-sparkline]")).length
+    return withTrend > 0 && withTrend < items.length
+      ? `同一排的 ${items.length} 个指标结构不一样：${withTrend} 个带趋势线、${items.length - withTrend} 个不带；要么都传 trend，要么都不传`
+      : null
+  }
+  return null
 }
 
 /** 透明面不能靠看不见的内边距制造第二条内容线（K5）。 */

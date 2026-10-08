@@ -67,7 +67,8 @@ function AccountRow() {
 }
 
 /**
- * 外壳用 Su 的 Sidebar（收起 / 展开按钮在正文卡片左上角，快捷键 [；收起后碰左边缘浮出；右边线可拖动调宽；窄于 768 换成从左滑出的抽屉）。
+ * 外壳用 Su 的 Sidebar：折叠钮由侧栏自己画在第一栏右上角（展开时指向侧栏才淡入，收起后留 56 宽窄栏、按钮常驻顶部），
+ * 快捷键 [；不做悬停浮出；右边线可拖动调宽；窄于 768 换成从左滑出的抽屉，正文顶栏的 SidebarTrigger 只在这时出现。
  * 侧栏头：24 的站标中心与导航图标中心同一条竖线（头左内边距 12 + 12 = 24，导航 8 + 8 + 8 = 24），站名与导航文字同从 40 起。
  * 导航项单独放（不进 NavMenu）：当前底是静态的、悬停是 CSS，切换直接到位，不出现两块底追着滑。
  */
@@ -97,8 +98,8 @@ function Frame() {
       </Sidebar>
       <SidebarInset className="min-h-0 p-(--ds-gutter) @max-xl:p-0">
         <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-card bg-canvas @max-xl:rounded-none">
-          {/* 收起按钮嵌进卡片左上角：离上、左都是 4，圆角同心（同 Su 的 app-shell） */}
-          <header className="flex h-(--ds-header-h) shrink-0 items-center pl-1">
+          {/* 窄屏的抽屉按钮嵌进卡片左上角：离上、左都是 4，圆角同心；宽屏不渲染按钮，左内边距回到 24（同 Su 的 app-shell） */}
+          <header className="flex h-(--ds-header-h) shrink-0 items-center pl-6 has-[[data-slot=sidebar-trigger]]:pl-1">
             <SidebarTrigger className="rounded-popover" />
           </header>
           <div className="scroll-safe min-h-0 flex-1 overflow-y-auto">

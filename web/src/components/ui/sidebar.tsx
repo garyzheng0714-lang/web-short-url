@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { PanelLeft, PanelRight } from "lucide-react"
 import { animate, motion, useMotionValue, useReducedMotion, useTransform, type MotionValue, type Transition } from "motion/react"
@@ -10,42 +8,39 @@ import { nextFrame } from "@/components/ui/frame"
 import { isComposing, isEditable } from "@/components/ui/hotkeys"
 import { useGeometryInvariant } from "@/components/ui/invariant"
 import { SidebarDrawer } from "@/components/ui/sidebar-drawer"
-import { SIDEBAR_MAX, SidebarPeekStrip, SidebarRail, usePeek } from "@/components/ui/sidebar-rail"
+import { SIDEBAR_MAX, SidebarRail } from "@/components/ui/sidebar-rail"
 
 import { Button } from "@/components/ui/button"
 import { Tooltip } from "@/components/ui/tooltip"
 
 /**
- * 侧栏（DESIGN.md K3、K4、§3.9）：宽 256（工具栏 400），左右内边距 8，组间 12。没有图标栏：收起就整个隐藏。
- * - 收起后左边一条 12 宽的感应条：鼠标停 150ms 把完整的侧栏浮出来（浮出的卡，名字、分组都在），离开 250ms 后收回；
- *   感应条、收起时的触发器和浮出的卡共用一个计时器，在它们之间移动不会收回。浮出不改变收起状态，也不记下来。
- *   离开按指针的位置判断（卡四周留 8），盖在卡上的提示、菜单不算离开；Esc、点外面收回。
+ * 侧栏（DESIGN.md K3、K4、§3.9）：宽 256（工具栏 400），左右内边距 8，组间 12。
+ * - 折叠钮永远在第一栏的右上角（用户 2026-10-08：「永远都在第一栏的右上角」），由侧栏自己画，使用方放不错：
+ *   展开时指向侧栏或键盘聚焦才淡入（L2），收起后侧栏留一条 56 宽的窄栏，折叠钮常驻在窄栏顶部。
+ *   正文里的 SidebarTrigger 只在窄屏出现，用来打开抽屉。
+ * - 不做悬停浮出（用户 2026-10-08：「我鼠标移动到侧边栏为什么会自动弹出，这是什么垃圾」）：收起就是收起，只有点折叠钮或按 [ 才展开。
  * - 展开时右边线外侧有把手（ui/sidebar-rail）：拖动调宽 160–360，往外拖过最小宽 56 预演收起，拖回取消，松手才算数；不动直接点 = 收起。
  * - 快捷键 [（不带修饰键，⌘[ 留给浏览器后退；在输入框里打字、输入法组字时不触发）。页面上有几个侧栏时，焦点在哪个侧栏里就由它响应，
  *   焦点不在任何侧栏里时由最外层的响应。
  * - 桌面的开合记进 cookie sidebar_state（7 天，persist）；服务端渲染的布局可以读它当 defaultOpen。窄屏抽屉不记。
  * - 窄于断点（视口 768；嵌在页面一块里的外框 responsive="container" 按外框自己的宽度，默认 640）换成从左边滑出的抽屉。
  * 动效（档位见 ui/ease）：
- * - 开合：占位列宽度与面板平移同一个进度，进场 slow（0.24s · 回弹 0.12），收起 EXIT.slow（0.16s）。可打断。
+ * - 开合：占位列宽度、面板平移、内容淡出同一个进度，进场 slow（0.24s · 回弹 0.12），收起 EXIT.slow（0.16s）。可打断。
+ *   折叠钮钉在面板右上角，跟着右边线滑到窄栏里，来去同路。
  * - 拖动调宽：1:1 跟手（时长 0）；拖动途中预演收起 / 拖回展开走 moderate（收起 EXIT.moderate）。
- * - 浮出 / 收回：moderate（0.16s）/ EXIT.moderate（0.12s）；从浮出直接钉住时面板不动，只有占位列走 slow。
  * - 窄屏抽屉：滑进 moderate、滑出 EXIT.moderate；遮罩随 PopupScrim。
  * - 减少动态：直接到位；抽屉不位移，只淡入（fast）淡出（EXIT.fast）。键盘与指针同一套档位。
- * 有通栏顶栏时在 SidebarProvider 上设 --ds-sidebar-top（顶栏高度）：面板、感应条从它往下排；抽屉是模态的，盖住顶栏。
+ * 有通栏顶栏时在 SidebarProvider 上设 --ds-sidebar-top（顶栏高度）：面板从它往下排；抽屉是模态的，盖住顶栏。
  */
 type SidebarContextValue = {
   open: boolean; setOpen: (open: boolean) => void; desktop: boolean
   mobileOpen: boolean; setMobileOpen: (open: boolean) => void
-  /** peek：收起时能否浮出；peeking：正浮出着 */
-  peek: boolean; peeking: boolean; setPeeking: (peeking: boolean) => void
-  /** 浮出的意图计时（150ms）、收回计时（250ms）与撤销：感应条、触发器、浮出的卡共用这一个 */
-  schedulePeek: () => void
-  scheduleDismissPeek: () => void
-  /** Esc 收回：指针还停在感应条、触发器上时不立刻再浮出，要真的移动过才重新算意图 */
-  dismissPeek: (pointer: { x: number; y: number } | null) => void
-  cancelPeekTimer: () => void
+  /** 侧栏里有没有 SidebarHeader：没有时内容区顶上让出一行给折叠钮 */
+  hasHeader: boolean; setHasHeader: (has: boolean) => void
   /** instant：跳过动画（程序恢复状态时） */
   toggle: (opts?: { instant?: boolean }) => void
+  /** 是否逐帧改变正文宽度；大型画布关闭后宽度一次到位，侧栏仍平滑位移 */
+  animateLayout: boolean
   /** 这一次开合要不要跳过动画；由 toggle 写入，这一次提交之后清掉 */
   instant: React.RefObject<boolean>
   resizing: boolean; setResizing: (resizing: boolean) => void
@@ -116,7 +111,7 @@ function SidebarProvider({
   open: openProp,
   onOpenChange,
   shortcut = true,
-  peek = true,
+  animateLayout = true,
   persist,
   responsive = "viewport",
   breakpoint,
@@ -131,8 +126,8 @@ function SidebarProvider({
   onOpenChange?: (open: boolean) => void
   /** 是否响应快捷键 [ */
   shortcut?: boolean
-  /** 收起后碰左边缘浮出 */
-  peek?: boolean
+  /** 是否动画正文宽度。大型画布设 false，避免每帧 ResizeObserver 触发重投影与重绘；侧栏位移动效保留 */
+  animateLayout?: boolean
   /** 桌面开合记进 cookie（7 天）。默认：整个应用（viewport）记，嵌在页面里的外框（container）不记 */
   persist?: boolean
   /** 宽窄按什么判断：viewport 视口；container 外框自己的宽度（嵌在页面一块里的外框） */
@@ -172,14 +167,7 @@ function SidebarProvider({
     [openProp, onOpenChange, remember]
   )
 
-  // 浮出：一个计时器，感应条、触发器、浮出的卡三处共用（ui/sidebar-rail 的 usePeek）
-  const { peeking, setPeeking, timer, schedulePeek, scheduleDismissPeek, dismissPeek, cancelPeekTimer } = usePeek(wrapper)
-  // 钉住、关掉浮出、换成抽屉：撤掉浮出和还没到点的计时（到点的计时会在展开的侧栏上再浮一次）
-  React.useEffect(() => {
-    if (!open && peek && desktop) return
-    window.clearTimeout(timer.current)
-    setPeeking(false)
-  }, [open, peek, desktop])
+  const [hasHeader, setHasHeader] = React.useState(false)
 
   const toggle = React.useCallback(
     (opts: { instant?: boolean } = {}) => {
@@ -214,8 +202,8 @@ function SidebarProvider({
   const maxWidth = Math.max(SIDEBAR_MAX, width)
   const value: SidebarContextValue = {
     open, setOpen, desktop, mobileOpen, setMobileOpen,
-    peek, peeking, setPeeking, schedulePeek, scheduleDismissPeek, dismissPeek, cancelPeekTimer,
-    toggle, instant, resizing, setResizing, dragWidth, setDragWidth, maxWidth,
+    hasHeader, setHasHeader,
+    toggle, animateLayout, instant, resizing, setResizing, dragWidth, setDragWidth, maxWidth,
     shortcut: shortcut ? SHORTCUT : null,
     frame: container ? wrapper : null,
   }
@@ -226,7 +214,7 @@ function SidebarProvider({
         ref={wrapper}
         data-slot="sidebar-wrapper"
         data-responsive={responsive}
-        className={cn("flex min-h-svh w-full bg-canvas text-fg [--ds-sidebar-top:0px]", container && "relative", SIDEBAR_WIDTH[width], className)}
+        className={cn("flex min-h-svh w-full bg-canvas text-fg [--ds-sidebar-top:0px] [--ds-sidebar-rail:56px]", container && "relative", SIDEBAR_WIDTH[width], className)}
         style={dragWidth === null ? style : ({ ...style, "--ds-sidebar-w": `${dragWidth}px` } as React.CSSProperties)}
       >
         {children}
@@ -248,11 +236,21 @@ function noSideScroll(el: HTMLElement) {
  * 外框分区（DESIGN.md §3.9）：整个应用的侧栏是一个区，指针在它上面只滚它，到头、内容不够长也不传给页面。
  * 嵌在页面一块里的外框（responsive="container"）属于正文，照 §5 滚到头交给页面，所以不加。
  */
-function PanelScroll({ children }: { children: React.ReactNode }) {
-  const { frame } = useSidebar()
+function PanelScroll({ opacity, inert, children }: { opacity: MotionValue<number>; inert: boolean; children: React.ReactNode }) {
+  const { frame, hasHeader } = useSidebar()
   const node = React.useRef<HTMLDivElement>(null)
   useGeometryInvariant("Sidebar", node, noSideScroll)
-  return <div ref={node} data-slot="sidebar-scroll" className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", !frame && "overscroll-y-contain")}>{children}</div>
+  return (
+    <motion.div
+      ref={node}
+      data-slot="sidebar-scroll"
+      inert={inert}
+      style={{ opacity }}
+      className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", !frame && "overscroll-y-contain", !hasHeader && "pt-(--ds-header-h)")}
+    >
+      {children}
+    </motion.div>
+  )
 }
 
 /** 进度 p（0–1）推到 to：transition 由调用方按起因选；null = 直接到位。onRest 只在自然停稳时调用 */
@@ -283,121 +281,53 @@ function Sidebar({ className, label = "侧栏", rail = true, children }: {
 
 function DesktopSidebar({ className, label, rail, children }: { className?: string; label: string; rail: boolean; children: React.ReactNode }) {
   const s = useSidebar()
-  const { open, peeking, setPeeking, resizing, frame, instant } = s
+  const { open, resizing, frame, instant, animateLayout } = s
   const reduce = useReducedMotion()
   const aside = React.useRef<HTMLElement>(null)
-  const shown = open || peeking
-  const peekable = s.peek && !open && !resizing
-  // 浮出的卡的样子（离上下各 8、圆角、浮起）：浮出时换上，收回停稳后才换回贴边的样子；钉住时立刻贴边
-  const [floating, setFloating] = React.useState(false)
-  if (open && floating) setFloating(false)
-  if (peeking && !open && !floating) setFloating(true)
-
-  const column = useMotionValue(open ? 1 : 0)
-  const panel = useMotionValue(shown ? 1 : 0)
-  const columnWidth = useTransform(column, (v) => `calc(var(--ds-sidebar-w) * ${v})`)
-  const transform = useTransform(panel, (v) => `translateX(calc((-100% - 16px) * ${1 - v}))`)
+  // 一个进度 p：占位列从窄栏 56 到整宽、面板从「只露右边 56」到全露、内容从透明到不透明，同一个数推着走
+  const p = useMotionValue(open ? 1 : 0)
+  const columnWidth = useTransform(p, (v) => `calc(var(--ds-sidebar-rail) + (var(--ds-sidebar-w) - var(--ds-sidebar-rail)) * ${v})`)
+  const transform = useTransform(p, (v) => `translateX(calc((var(--ds-sidebar-rail) - var(--ds-sidebar-w)) * ${1 - v}))`)
+  const contentOpacity = useTransform(p, [0, 0.5, 1], [0, 0.4, 1])
 
   const first = React.useRef(true)
-  const prev = React.useRef({ open, shown })
+  const prev = React.useRef(open)
   React.useLayoutEffect(() => {
     const was = prev.current
-    prev.current = { open, shown }
+    prev.current = open
     if (first.current) {
       first.current = false
       return
     }
+    if (was === open) return
     const snap = reduce || instant.current
     // 开合：slow / EXIT.slow；拖动途中的预演收起 / 拖回：moderate / EXIT.moderate
-    const openMotion: Transition | null = snap ? null : resizing ? (open ? SPRINGS.moderate : EXIT.moderate) : open ? SPRINGS.slow : EXIT.slow
-    const cancels: ((() => void) | undefined)[] = []
-    if (was.open !== open) cancels.push(drive(column, open ? 1 : 0, openMotion))
-    if (was.shown !== shown) {
-      // 浮出 / 收回是浮出的卡在动：moderate；开合时面板与占位列同一档
-      const panelMotion = was.open !== open ? openMotion : snap ? null : peeking ? SPRINGS.moderate : EXIT.moderate
-      cancels.push(drive(panel, shown ? 1 : 0, panelMotion, shown ? undefined : () => setFloating(false)))
-    }
-    return () => cancels.forEach((c) => c?.())
+    const motion: Transition | null = snap ? null : resizing ? (open ? SPRINGS.moderate : EXIT.moderate) : open ? SPRINGS.slow : EXIT.slow
+    return drive(p, open ? 1 : 0, motion)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, shown])
-
-  // 浮出时：Esc、点外面收回；指针离开卡（四周留 8）250ms 后收回。按位置判断，盖在卡上的提示、菜单不算离开
-  React.useEffect(() => {
-    if (!peekable || !peeking) return
-    const doc = aside.current?.ownerDocument
-    if (!doc) return
-    let last: { x: number; y: number } | null = null
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isComposing(event)) s.dismissPeek(last)
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      const card = aside.current
-      if (!card || card.contains(event.target as Node)) return
-      // 卡里打开的菜单挂在别处：点菜单不算点外面
-      if (card.querySelector("[aria-haspopup]:is([data-state=open],[aria-expanded=true])")) return
-      setPeeking(false)
-    }
-    let inside = true
-    const onPointerMove = (event: PointerEvent) => {
-      const card = aside.current
-      if (!card || event.pointerType !== "mouse") return
-      last = { x: event.clientX, y: event.clientY }
-      const box = card.getBoundingClientRect()
-      const now = event.clientX >= box.left - 8 && event.clientX <= box.right + 8 && event.clientY >= box.top - 8 && event.clientY <= box.bottom + 8
-      if (now) {
-        inside = true
-        s.cancelPeekTimer()
-      } else if (inside) {
-        inside = false
-        s.scheduleDismissPeek()
-      }
-    }
-    doc.addEventListener("keydown", onKeyDown)
-    doc.addEventListener("pointerdown", onPointerDown)
-    doc.addEventListener("pointermove", onPointerMove)
-    return () => {
-      doc.removeEventListener("keydown", onKeyDown)
-      doc.removeEventListener("pointerdown", onPointerDown)
-      doc.removeEventListener("pointermove", onPointerMove)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peekable, peeking])
+  }, [open])
 
   return (
     <>
-      <motion.div aria-hidden data-slot="sidebar-column" style={{ contain: "layout", width: columnWidth }} className="shrink-0" />
-      {peekable ? (
-        <SidebarPeekStrip
-          peeking={peeking}
-          absolute={Boolean(frame)}
-          onIntent={peeking ? s.cancelPeekTimer : s.schedulePeek}
-          onLeave={s.cancelPeekTimer}
-          onPeek={() => {
-            s.cancelPeekTimer()
-            setPeeking(true)
-          }}
-        />
-      ) : null}
+      <motion.div
+        aria-hidden
+        data-slot="sidebar-column"
+        style={{ contain: "layout", width: animateLayout ? columnWidth : open ? "var(--ds-sidebar-w)" : "var(--ds-sidebar-rail)" }}
+        className="shrink-0"
+      />
       <motion.aside
         ref={aside}
         aria-label={label}
         data-slot="sidebar"
-        data-state={open ? "expanded" : peeking ? "peek" : "collapsed"}
-        // 拖动途中预演收起时面板仍握着指针，不能 inert
-        inert={!shown && !resizing}
+        data-state={open ? "expanded" : "collapsed"}
         style={{ transform }}
-        className={cn(
-          panelClass,
-          frame ? "absolute z-40" : "fixed z-40",
-          floating
-            ? "top-[calc(var(--ds-sidebar-top)+var(--ds-gutter))] bottom-(--ds-gutter) left-0 w-[calc(var(--ds-sidebar-w)-var(--ds-gutter))] rounded-card bg-card shadow-overlay"
-            : "top-(--ds-sidebar-top) bottom-0 left-0 bg-sidebar",
-          className
-        )}
+        className={cn(panelClass, frame ? "absolute z-40" : "fixed z-40", "top-(--ds-sidebar-top) bottom-0 left-0 bg-sidebar", className)}
       >
-        <PanelScroll>{children}</PanelScroll>
+        {/* 拖动途中预演收起时内容还握着指针，不能 inert */}
+        <PanelScroll opacity={contentOpacity} inert={!open && !resizing}>{children}</PanelScroll>
+        <PanelToggle />
         {/* 拖动途中预演收起时把手还握着指针：收起了也留着，松手才卸 */}
-        {rail && (open || resizing) && !floating ? (
+        {rail && (open || resizing) ? (
           <SidebarRail
             max={s.maxWidth}
             shortcut={s.shortcut}
@@ -414,11 +344,41 @@ function DesktopSidebar({ className, label, rail, children }: { className?: stri
 }
 
 /**
+ * 侧栏自己的折叠钮：钉在面板右上角，盒子宽 = 窄栏宽（56），按钮在里面居中，所以收起后正好落在窄栏正中、展开时离右边线 10。
+ * 展开时是附属工具（L2）：指向侧栏、键盘聚焦时 80ms 淡入，离开 60ms 淡出；收起后它是窄栏里唯一的东西，常驻。触屏常驻。
+ */
+function PanelToggle() {
+  const { open, toggle, shortcut } = useSidebar()
+  const name = open ? "收起侧栏" : "展开侧栏"
+  return (
+    <div
+      data-slot="sidebar-toggle"
+      className={cn(
+        "absolute top-0 right-0 flex h-(--ds-header-h) w-(--ds-sidebar-rail) items-center justify-center",
+        open && "opacity-0 transition-opacity duration-(--ds-dur-fast-exit) ease-ds group-hover/sidebar:opacity-100 group-hover/sidebar:duration-(--ds-dur-fast) focus-within:opacity-100 focus-within:duration-(--ds-dur-fast) [@media(hover:none)]:opacity-100"
+      )}
+    >
+      <Tooltip content={shortcut ? <>{name}<kbd className="font-sans">{shortcut}</kbd></> : name}>
+        <Button variant="ghost" size="icon" aria-label={name} aria-expanded={open} aria-keyshortcuts={shortcut ?? undefined} onClick={() => toggle()}>
+          {open ? <PanelLeft /> : <PanelRight />}
+        </Button>
+      </Tooltip>
+    </div>
+  )
+}
+
+/**
  * 头、内容、脚三段共用一列的起止线（DESIGN.md §3.2）：行盒子在 8–(宽 − 16)，墨迹在 16–(宽 − 24)。
- * 内容区右边是滚动安全区 16（scroll-safe）；头里直接放墨迹（站名、edge-end 的图标钮），所以左 16、右 24；脚里放行，所以左 8、右 16。
+ * 内容区右边是滚动安全区 16（scroll-safe）；头里直接放墨迹（站名），左 16，桌面右边让出折叠钮那一格（56）；脚里放行，所以左 8、右 16。
  */
 function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="sidebar-header" className={cn("flex h-(--ds-header-h) shrink-0 items-center gap-2 ps-4 pe-6", className)} {...props} />
+  const { desktop, setHasHeader } = useSidebar()
+  React.useLayoutEffect(() => {
+    setHasHeader(true)
+    return () => setHasHeader(false)
+  }, [setHasHeader])
+  // 桌面：右上角是折叠钮的格（窄栏宽 56），头里的字、图标钮停在它左边
+  return <div data-slot="sidebar-header" className={cn("flex h-(--ds-header-h) shrink-0 items-center gap-2 ps-4", desktop ? "pe-(--ds-sidebar-rail)" : "pe-6", className)} {...props} />
 }
 
 /** 滚动区：组间 12 留白 */
@@ -436,36 +396,16 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 /**
- * 收起 / 展开的图标按钮，提示里带键位。收起时它也是浮出的入口：鼠标停在上面 150ms 浮出（和感应条同一个计时器），
- * 浮出的卡盖住它时不算离开。开着用 PanelLeft（左边有一栏），收起后用 PanelRight。
+ * 打开抽屉的图标按钮：只在窄屏出现，放在正文顶栏的起始端；桌面上折叠钮由侧栏自己画在第一栏右上角（PanelToggle），这里不渲染。
  */
-function SidebarTrigger({ className, onPointerEnter, onPointerLeave, ...props }: React.ComponentProps<typeof Button>) {
-  const { open, desktop, mobileOpen, toggle, peek, peeking, schedulePeek, cancelPeekTimer, shortcut } = useSidebar()
-  const shown = desktop ? open : mobileOpen
-  const name = shown ? "收起侧栏" : "展开侧栏"
-  const hoverPeek = peek && desktop && !open
+function SidebarTrigger({ className, ...props }: React.ComponentProps<typeof Button>) {
+  const { desktop, mobileOpen, toggle } = useSidebar()
+  if (desktop) return null
+  const name = mobileOpen ? "收起侧栏" : "展开侧栏"
   return (
-    <Tooltip content={shortcut ? <>{name}<kbd className="font-sans">{shortcut}</kbd></> : name}>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={name}
-        aria-expanded={shown}
-        aria-keyshortcuts={shortcut ?? undefined}
-        data-slot="sidebar-trigger"
-        onClick={() => toggle()}
-        onPointerEnter={(e) => {
-          onPointerEnter?.(e)
-          if (hoverPeek && e.pointerType === "mouse") (peeking ? cancelPeekTimer : schedulePeek)()
-        }}
-        onPointerLeave={(e) => {
-          onPointerLeave?.(e)
-          if (hoverPeek && !peeking) cancelPeekTimer()
-        }}
-        className={className}
-        {...props}
-      >
-        {shown ? <PanelLeft /> : <PanelRight />}
+    <Tooltip content={name}>
+      <Button variant="ghost" size="icon" aria-label={name} aria-expanded={mobileOpen} data-slot="sidebar-trigger" onClick={() => toggle()} className={className} {...props}>
+        {mobileOpen ? <PanelLeft /> : <PanelRight />}
       </Button>
     </Tooltip>
   )
