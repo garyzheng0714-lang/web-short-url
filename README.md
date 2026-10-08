@@ -1,178 +1,119 @@
-<p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="FBIF 短链：粘长链接生成短链与二维码，并可解析跳转链路查最终落地页">
-</p>
+# FBIF 短链（web-short-url）
 
-<p align="center">
-  <img src="https://img.shields.io/badge/%E7%B1%BB%E5%9E%8B-%E7%9F%AD%E9%93%BE%E5%B7%A5%E5%85%B7-f97316?style=flat-square" alt="短链工具">
-  <img src="https://img.shields.io/badge/Node.js-Express-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js Express">
-  <img src="https://img.shields.io/badge/SQLite-better--sqlite3-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
-  <img src="https://img.shields.io/badge/%E7%99%BB%E5%BD%95-%E9%A3%9E%E4%B9%A6%E5%8D%95%E5%BA%94%E7%94%A8-2563eb?style=flat-square" alt="飞书单应用登录">
-</p>
+内部短链工具：在小码（Xiaomark）团队账号之上，提供短链创建、归属和效果仪表盘。飞书登录识别使用者，Express 把小码账号里的全部短链与统计镜像到本地 SQLite，React 前端读本地数据展示。
 
-# web-short-url · FBIF 短链
+> 目录位于 `归档/`，但仓库 `main` 分支有生产部署（`https://shorturl.garyzheng.com`，服务器 121.40.214.5，端口 3010），不能按废弃项目处理。
 
-基于小码 API 的短链创建网页工具。粘一条长链接就能拿到短链和二维码，还能解析跳转链路排查最终落地页。
+## 能力
 
-**共享的小码 API key 只留在服务端，不下发前端**；用户也可以在表单里填自己的 key，这是两种不同模式，不要混谈。
+- **生成短链**：粘贴长链接，选域名（自有域名 t.fbif.com / t.foodtalks.cn）与分组，可选名称、自定义后缀、随机长度、机器过滤、微信内打开、事件推送。
+- **全量镜像**：定时把小码账号里的项目、分组、全部短链（约 1 万条）同步到本地，列表、搜索、筛选、排序都走本地库。
+- **效果仪表盘**：短链详情（每日访问、24 小时分布、设备、系统、浏览器、网络、地区、来源、高频 IP、访问记录）、分组详情、团队概览（指标卡、每日折线、访问最多、最近创建）。
+- **归属**：本工具建的短链自动记创建者；历史短链可认领；管理员可把分组指定给某人；「我的」范围 = 我创建的 + 我名下分组里的。
+- **管理**：编辑目标链接与名称、暂停 / 恢复跳转、二维码、跳转链路解析；管理员可看同步状态、小码额度与白名单、成员列表。
+- **Webhook（可选）**：接收小码访问事件推送（验签、去重），可原样转发给原有接收方。
 
-> 目录虽然位于 `归档/`，但 `codex/short-url-ui` 分支仍有生产部署。
+## 架构
 
-## 仓库定位
+```
+浏览器 React 19 + Vite + Tailwind v4 + Su Design（web/）
+   │ 同源 fetch，cookie 或 X-Session-Token
+   ▼
+Express（server.js）
+   ├─ 飞书 OAuth / 端内 SSO（lib/feishu_auth.js）
+   ├─ 业务 API（lib/api.js）：只读本地镜像；写操作先打小码再回写
+   ├─ 同步引擎（lib/sync.js）：盘点、分层刷新累计数据、按需拉每日 / 多维数据
+   ├─ 小码客户端（lib/xiaomark.js）：并发上限、退避重试、熔断
+   └─ SQLite（lib/db.js，版本化迁移）
+```
 
-- 分类：短链工具 / 小码 API 前端代理 / 运营链接管理。
-- 服务对象：需要快速创建短链、生成二维码、排查跳转链路并保存个人历史记录的内部运营工作流。
-- 边界说明：本仓库是独立 Web 工具，不是浏览器插件，也不是飞书多维表格插件。
+详细说明见 [docs/ARCHI.md](docs/ARCHI.md)。
 
-## 功能概览
+## 页面
 
-- 创建单条小码短链接。
-- 自动拉取小码项目、分组和自有域名。
-- 支持在前端弹窗创建分组。
-- 支持默认域名、随机后缀长度和高级字段展示。
-- 服务端缓存项目/分组/域名元数据，缓存时长可配置。
-- 生成短链二维码，支持预览、复制和下载。
-- 解析跳转链路，便于排查最终落地页。
-- `/go?url=` 重定向代理。
-- 浏览器本地历史记录；登录后可使用 SQLite 保存服务端历史。
-- 飞书单应用统一登录：FBIF 与富的员工走同一个应用、同一个「使用飞书登录」按钮（富的经关联组织应用共享），飞书客户端内可免登。
-- 提供健康检查接口、PM2 配置和 Nginx 部署说明。
+| 路径 | 内容 |
+| --- | --- |
+| `/` | 短链：生成区 + 可筛选排序的列表（全部 / 我的、分组、状态、域名、搜索），行尾操作 |
+| `/links/:id` | 短链详情与数据 |
+| `/overview` | 概览：范围（全部 / 我的）、分组、近 7 / 30 / 90 天 |
+| `/groups`、`/groups/:id` | 分组列表（管理员可指定归属）与分组数据 |
+| `/settings` | 默认域名 / 分组 / 机器过滤；管理员：同步状态、小码额度、成员 |
+| `/login` | 飞书登录页（静态 `public/login.html`） |
 
-## 技术栈
+## API
 
-- Node.js ES modules。
-- Express 4。
-- better-sqlite3。
-- cookie-parser。
-- dotenv。
-- qrcode。
-- 原生 HTML/CSS/JavaScript 前端。
-- PM2 进程管理。
+全部返回 `{ ok, data }` 或 `{ ok: false, error: { code, message } }`。除标注外都要求登录。
 
-## 快速开始
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/health` | 健康检查（公开） |
+| GET | `/api/me` | 登录态 |
+| GET | `/api/bootstrap` | 当前用户、域名、分组、默认值、额度、同步摘要 |
+| GET | `/api/links` | 列表：`scope`、`group`、`status`、`domain`、`q`、`sort`、`page`、`page_size` |
+| GET | `/api/links/trends?ids=` | 列表里的 7 日迷你趋势（最多 50 条） |
+| POST | `/api/links` | 建链 |
+| GET / PATCH | `/api/links/:id` | 详情 / 编辑（创建者、分组归属人或管理员） |
+| POST | `/api/links/:id/suspend`、`/resume`、`/claim` | 暂停、恢复、认领（管理员可传 `open_id` 改派） |
+| GET | `/api/links/:id/stats` | 累计、期间、每日序列、多维分布；`range=7d|30d|90d` 或 `start&end`，`bot=include` 含机器 |
+| GET | `/api/links/:id/visits` | 访问记录分页 |
+| GET | `/api/overview` | 概览聚合 |
+| GET / POST | `/api/groups` | 分组列表 / 新建 |
+| GET | `/api/groups/:id/stats` | 分组数据 |
+| PATCH | `/api/groups/:id` | 归属人、改名（管理员） |
+| GET | `/api/users` | 成员 |
+| GET / PUT | `/api/settings` | 个人默认值 |
+| GET / POST | `/api/admin/sync`、`/api/admin/sync/run` | 同步状态 / 手动触发（管理员） |
+| GET | `/api/admin/quota` | 小码额度、白名单、自有域名（管理员） |
+| POST | `/api/tools/qrcode`、`/api/tools/resolve-redirect` | 二维码、跳转链路 |
+| POST | `/api/webhooks/xiaomark` | 小码事件推送（公开，SHA1 验签，未配置 token 时 404） |
+| GET | `/go?url=` | 302 跳转，只允许短链域名（公开） |
 
-安装依赖：
+## 环境变量
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `PORT` | 否 | 默认 3000，生产 3010 |
+| `XIAOMARK_API_KEY` | 是 | 小码团队 API key，只在服务端 |
+| `SYNC_ENABLED` / `SYNC_TICK_MS` / `SYNC_CONCURRENCY` | 否 | 同步开关、每轮间隔（默认 5 分钟）、对小码的并发（默认 2） |
+| `XIAOMARK_WEBHOOK_TOKEN` | 否 | 小码后台设置的签名 token；留空则不开 webhook 接口 |
+| `WEBHOOK_RELAY_URL` | 否 | 收到的事件转发地址 |
+| `ADMIN_FEISHU_OPEN_IDS` | 推荐 | 管理员飞书 open_id，逗号分隔 |
+| `DB_PATH` | 否 | SQLite 路径，默认 `shorturl.db` |
+| `ALLOWED_GO_HOSTS` | 否 | `/go` 额外允许的域名 |
+| `FEISHU_FBIF_APP_ID` / `_SECRET` / `FEISHU_REDIRECT_BASE` | 是 | 飞书登录 |
+| `FEISHU_ALLOWED_TENANT_KEYS` | 生产建议 | 租户白名单 |
+
+## 本地开发
 
 ```bash
-npm install
+npm install && cp .env.example .env     # 填 XIAOMARK_API_KEY 等
+npm run sync inventory-full             # 第一次：把小码账号镜像到本地（约 110 次调用，几秒）
+npm run sync totals                     # 第一次：补齐全部短链的累计数据（1 万条约 10 分钟）
+npm start                               # 后端 :3000，同步引擎按 tick 自动运行
+cd web && npm install && npm run dev    # 前端 :5174，/api /auth /login 代理到 :3000
 ```
 
-创建本地环境配置：
+本机没有飞书回调时，用 `node scripts/dev-session.mjs --admin` 生成一个测试会话 token，放进 cookie `shorturl_session` 或请求头 `X-Session-Token`（只对本地库有效）。
+
+## 构建与验证
 
 ```bash
-cp .env.example .env
+npm test                                # node:test：小码客户端、迁移、同步引擎
+npm run build:web                       # tsc + vite，产物 web/dist，由 Express 托管
+node --check server.js lib/*.js
+SESSION_TOKEN=<token> BASE_URL=http://127.0.0.1:3000 node web/scripts/ui-check.mjs   # 真实 Chrome 走查各页并截图
 ```
 
-启动服务：
-
-```bash
-npm start
-```
-
-开发模式：
-
-```bash
-npm run dev
-```
-
-默认访问地址：
-
-```text
-http://localhost:3000
-```
-
-## 配置
-
-`.env.example` 中的主要变量：
-
-| 变量 | 说明 |
-| --- | --- |
-| `PORT` | 服务端端口，默认 `3000` |
-| `XIAOMARK_API_KEY` | 服务端保存的小码 API key |
-| `DEFAULT_WEBHOOK_CALLBACK_URL` | 前端高级字段的默认展示值 |
-| `DEFAULT_WEBHOOK_SCENE` | 前端高级字段的默认场景值 |
-| `XIAOMARK_CACHE_TTL_MS` | 小码元数据缓存时长，单位毫秒 |
-
-飞书登录只需一个自建网页应用（单应用），把 App ID / App Secret 放到服务端环境变量：
-
-| 变量 | 说明 |
-| --- | --- |
-| `FEISHU_FBIF_APP_ID` | 登录 App ID（富的员工也走它，无需独立应用） |
-| `FEISHU_FBIF_APP_SECRET` | 登录 App Secret |
-| `FEISHU_REDIRECT_BASE` | 部署根地址，例如 `https://shorturl.garyzheng.com` |
-| `FEISHU_ALLOWED_TENANT_KEYS` | 可选，逗号分隔的 `tenant_key` 白名单。⚠️ 要开必须同时填 FBIF 和富的两个 |
-
-飞书后台配置（只需一个应用）：
-
-| 项 | 值 |
-| --- | --- |
-| 网页应用首页 URL | `https://shorturl.garyzheng.com/login?tenant=fbif` |
-| 安全设置 → 重定向 URL | `https://shorturl.garyzheng.com/auth/feishu/fbif/callback` |
-| 关联组织应用共享 | 在 admin.feishu.cn 把该 App 共享给「富的文化传媒（上海）有限公司」 |
-
-免登主链路是飞书客户端打开 `/login?tenant=fbif`，前端用飞书 H5 SDK 获取临时 code，后端用 App Secret 换用户身份并创建本系统 session。普通浏览器或 SDK 不可用时，退回到登录页的「使用飞书登录」按钮走 OAuth。富的员工经关联组织共享，点同一个按钮即可登录，靠 `tenant_key` 区分身份。
-
-运行时 SQLite 数据保存在项目目录的 `shorturl.db`。
-
-## 项目结构
-
-```text
-.
-├── server.js                 # Express 代理、OAuth、历史记录和二维码接口
-├── public/                   # 前端页面、脚本和样式
-├── docs/xiaomark-api/        # 小码 API 文档导出
-├── scripts/                  # 小码 API 文档抓取脚本
-├── DEPLOY.md                 # Node.js + PM2 + Nginx 部署说明
-├── ecosystem.config.cjs      # PM2 配置
-├── .env.example              # 环境变量模板
-└── package.json
-```
-
-## 常用脚本
-
-| 命令 | 说明 |
-| --- | --- |
-| `npm start` | 运行 `server.js` |
-| `npm run dev` | 使用 `node --watch` 运行 `server.js` |
-
-## 本地接口
-
-| 接口 | 说明 |
-| --- | --- |
-| `GET /api/health` | 健康检查 |
-| `GET /api/config` | 返回前端配置与接口路径 |
-| `GET /auth/feishu/fbif/login` | 发起飞书 OAuth 登录（单应用） |
-| `GET /auth/feishu/fbif/callback` | OAuth 登录回调 |
-| `GET /auth/feishu/fbif/sso-config` | 飞书客户端内免登配置（只返回 appID） |
-| `POST /auth/feishu/fbif/sso-exchange` | 飞书客户端内免登 code 交换 |
-| `POST /auth/feishu/logout` | 退出登录 |
-| `GET /api/me` | 检查登录状态 |
-| `GET /api/history` | 读取已登录用户历史记录 |
-| `POST /api/history/migrate` | 将浏览器历史迁移到服务端历史 |
-| `POST /api/meta/projects` | 代理读取小码项目 |
-| `POST /api/meta/groups` | 代理读取小码分组 |
-| `POST /api/meta/groups/create` | 代理创建小码分组 |
-| `POST /api/meta/private-domains` | 代理读取自有域名 |
-| `POST /api/shortlinks/create` | 代理创建短链接 |
-| `POST /api/tools/qrcode` | 生成二维码 |
-| `POST /api/tools/resolve-redirect` | 解析跳转链路 |
-| `GET /go?url=<url>` | 重定向代理 |
-
-小码相关接口需要服务端 `XIAOMARK_API_KEY`，或由前端用户输入 API key。
+更多见 [docs/4-unit-tests/TESTING.md](docs/4-unit-tests/TESTING.md)。
 
 ## 部署
 
-详见 `DEPLOY.md`。常见 PM2 流程：
+push 到 `main` 触发 GitHub Actions：CI 构建前端，产物复制到服务器，服务器拉代码、装依赖、PM2 重启、健康检查。详见 [DEPLOY.md](DEPLOY.md)。
 
-```bash
-npm ci
-pm2 start ecosystem.config.cjs --env production
-pm2 save
-```
+## 安全边界
 
-部署时建议通过 Nginx 反向代理，并把 API key 与 OAuth 密钥放在服务器环境变量或 `.env` 中。
-
-## 注意事项
-
-- 不要把小码 API key、飞书 App Secret 或 OAuth 配置提交到仓库。
-- “Webhook 推送地址”字段用于展示和记录；小码 webhook callback 与签名 token 仍需在小码后台配置。
-- 未配置飞书 OAuth 时仍可创建短链，但无法使用已登录用户的服务端历史记录。
+- 小码 API key 只在服务端；前端不再有自填 key 的入口。
+- 核心页面与业务 API 全部要求登录；写操作按创建者 / 分组归属人 / 管理员鉴权。
+- `/go` 只跳到短链域名；跳转链路解析拒绝内网地址。
+- webhook 必须通过 SHA1 验签，按记录 id 去重。
+- 不提交 `.env`、小码 key、飞书 secret、session token、生产数据库。

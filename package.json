@@ -1,12 +1,15 @@
 {
   "name": "short-url",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Xiaomark short link creator frontend with local proxy",
+  "description": "FBIF 短链：小码短链的创建、归属与效果仪表盘",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "build:web": "npm --prefix web run build",
+    "sync": "node scripts/sync.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",

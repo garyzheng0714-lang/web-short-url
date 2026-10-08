@@ -2,6 +2,10 @@
 
 - Source index: https://xiaomark.com/help/api/
 - Exported pages: 35
+- Snapshot fetched: 2026-02-24
+
+> 这是供应商文档的本地快照，不是实时接口契约。实现或排障时先核对源站；如源站有变，运行
+> `python3 scripts/fetch_xiaomark_api_docs.py --out-dir docs/xiaomark-api` 重新抓取，并审查差异后提交。
 
 ## Files
 

@@ -8,3 +8,9 @@ shorturl.db-wal
 .playwright-mcp/
 screenshots/
 .claude/codex-state/
+
+# web (Vite)
+web/node_modules/
+web/dist/
+web/.env.local
+web/.ui-check/

@@ -1,0 +1,709 @@
+/*
+ * 把设计变量映射成 Tailwind 工具类（bg-canvas、bg-card、text-fg-muted、rounded-row…）。
+ * 使用方：@import "tailwindcss"; 之后再 @import 本文件。
+ */
+@import "./ds-tokens.css";
+
+/* 弯引号交给中文字体；只覆盖这四个码点，拉丁字母仍是 Inter。
+ * 内嵌四字子集使 registry 安装不依赖本站字体包；来源 Noto Sans SC（SIL OFL 1.1）。
+ * 子集必须保留 OpenType 的 halt 特性：text-spacing-trim 靠它把行首开引号压成半宽，没有它行首“仍占一整字（2026-10-06 实测 17px@17）。
+ * 不用 local("PingFang SC")：苹方的弯引号是比例宽（0.54 字），装没装苹方的机器排出来不一样。
+ * 重新生成：python3 -m fontTools.subset noto-sans-sc-latin-wght-normal.woff2 --unicodes=U+2018,U+2019,U+201C,U+201D --layout-features=halt,vhal --name-IDs='*' --flavor=woff2
+Google Inc.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+ */
+@font-face {
+  font-family: "Su CJK Punctuation";
+  src: url("data:font/woff2;base64,d09GMgABAAAAAAVkABYAAAAADJgAAAT4AAIBBgAAAAAAAAAAAAAAAAAAAAAAAAAAGYIKG3ocQj9IVkFSMwZgP1NUQVSBHicqADwvbBEICoNggnYwglIBNgIkAwwLDAAEIAWGMAcgDAcXJBgMG6UKEVWkvwJ8cWA3/ngLhwFUI1EA+ynqKzFi9a57U2PC4+GhLuv9qmo4yXTgHjmblbKAcKR0ApxFNyfXk2+O6TX3uytBrAMPgIF5TsrLUGkNxsX+R+xt/D/HUi9So6j/VYBF6h3YiVU+j8ToNWbQaDseJWBk4u35Ws9mNNUpzo1UnhxRIcEYqu3ftxRC1e742vYy+RVXXnND03Y4bP89LbbL/jvtYbFdt9t7N9P22G7v7Uzbc7sD97aYPEhkhkwxyzXyIJWp6tDjQun4D5amSzpSjJfpku22w87bf0Yf+F8T5nv/ffbae037WRaxxH/bY4oZUgvLw7Gk6Z3yiGMJhEMFqgJdQjBmjATBZ/0CZUtZXRd6mu5ppGky3+9n11232/NARY7OVk+UDQhluf+ZeISQCKlQlI2lEtnq1ssYQ4+gR9Aj6BH8iD+QBLkmZum9Z2SbBDlcOieSNJOlH+8oR3J6sinWeG6J2NporERSSYR3sdyKy69jrNXTGkz3HU92arQQkAwnH9OSF0JRoKmEAckhu+x6YAQ6XuXlVra+re3uYAHa7UifFRXPXbIac5AikcS5JA8hn6nHr6A3kk1Ht9XR29MWrSM98ccJxcceA23KSzc1j+jR8ztn8rsjFvh2zBgkSNGUCjRlZiAvE5JWb2twHK2e1sC4T7/KeyAAgTaJ0FRSPAOiHRM7oqQkSlEeI0ZF/TmiSszh1IhzkXXkr4kG7yjSdgJbRjtpi+hgV28T4zRADpRRwdm4EZCBnBASSZYGdOerblRoz+++S32nnQqHNnbeOb/LEVc9dFvPJddWzrjZsTeVT38kjnvXVre59tE748KrhhC3BG5NIx6e+y1Dqp6ejSgm3Dix6g6HfNn68pyBpS89cqvHH3KjM5/c4sjm6AZGr1tZ4s7ZR+6ybXXDrnLfY93t1wwNXDl1RmvF0RsttXmOuN+ARe9rC5j4kJEJk2bwGMtlwOcOHzjVTCAQAi05MAkMWMyuLh1zbCiah+bE3u6+/u5GpWMoMKrpH0vPS9ROaP7zvv89kAfj76MIV97f+Qn9E0+Yu8qnX4xtO55+Wyswrv9RzWjt/wtqf39+zlU3g/GI9p5OyR9z5hpAbrJrMf3n9f29Tuv1+MHvPws1NODWuw79Mwchrtcaqv+hhTQtNCZUsh39M0atgdkD7Xr1zxzMJpofSCK/0x/bHL9NY6nfiDT9Eh/dNuVa+PT8e9/9Tvyno/NCB/ISEGSn/l8AKvdVEP57zSLYZSP9csd0niWTEy0gkEtWtaFPAEc1/Z6KrIQr6UOY5EpI1D0CqTEvjc7qIGf3qELeUBwMdQvFhfx2xXiuU4RqvAbN0ugyoKIZH0FVOX6EmrpHoK4af0NDW5KHNsWkC9p1JEMX7VBOuMKQjkASRGXmQel6KMwd9kMY+mX5t3i+iRmO2G/gKEv40RSaoPThgQXmNTqwYWkJF5IgDJ6syikOuAsrGTxJWthGS3j5Qcr+Uq+KSS5xgqDY89XiajN5b/eNm3mrg9eWWH90JopA4WjgzM92koV9vjCtCdYNLdZzomigfUIirOzsYotcQRUtrqmaIOvq77TzBc3R/l8WnMaTY47lHn/dnOa3/2Lg8eTXbYkMOY336q1+RieokmcjJl0XLHa8N4s/6z7vP6NRH4yfYDTsd1846bZsoq376//Vrypz/PVfa7sjCNwR") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+2018-2019, U+201C-201D;
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  /* 圆角只留下语义档位；使用方的默认圆角工具类不再生成样式。 */
+  --radius-*: initial;
+  --color-canvas: var(--ds-canvas);
+  --color-inverse: var(--ds-inverse);
+  --color-inverse-fg: var(--ds-inverse-fg);
+  --color-sidebar: var(--ds-sidebar);
+  --color-card: var(--ds-card);
+  --color-panel: var(--ds-panel);
+  --color-menu: var(--ds-menu);
+  --color-notice: var(--ds-notice);
+  --color-table-head: var(--ds-table-head);
+  --color-table-line: var(--ds-table-line);
+  --color-card-hover: var(--ds-card-hover);
+  --color-fill: var(--ds-fill);
+  --color-fill-hover: var(--ds-fill-hover);
+  --color-tertiary: var(--ds-tertiary);
+  --color-tertiary-hover: var(--ds-tertiary-hover);
+  --color-hover: var(--ds-hover);
+  --color-active: var(--ds-active);
+  /* 次按钮的透明底：bg-tint hover:bg-tint-hover */
+  --color-tint: var(--ds-tint);
+  --color-tint-hover: var(--ds-tint-hover);
+  /* 面的层级（ui/elevated.tsx 按上下文自动取；要写死一层时用 bg-elevation-N shadow-elevation-N） */
+  --color-elevation-1: var(--ds-elevation-1);
+  --color-elevation-2: var(--ds-elevation-2);
+  --color-elevation-3: var(--ds-elevation-3);
+  --color-elevation-4: var(--ds-elevation-4);
+  --color-elevation-5: var(--ds-elevation-5);
+  --color-elevation-6: var(--ds-elevation-6);
+  --color-elevation-7: var(--ds-elevation-7);
+  --color-elevation-8: var(--ds-elevation-8);
+  --color-selected: var(--ds-selected);
+  --color-nav-current: var(--ds-nav-current);
+  --color-well: var(--ds-well);
+  --color-well-hover: var(--ds-well-hover);
+  --color-fg: var(--ds-fg);
+  --color-fg-muted: var(--ds-fg-muted);
+  --color-chart-1: var(--ds-chart-1);
+  --color-chart-2: var(--ds-chart-2);
+  --color-chart-3: var(--ds-chart-3);
+  --color-chart-bar: var(--ds-chart-bar);
+  --color-chart-bar-dim: var(--ds-chart-bar-dim);
+  --color-chart-cursor: var(--ds-chart-cursor);
+  --color-chart-trail: var(--ds-chart-trail);
+  --color-chart-heat-1: var(--ds-chart-heat-1);
+  --color-chart-heat-2: var(--ds-chart-heat-2);
+  --color-chart-heat-3: var(--ds-chart-heat-3);
+  --color-chart-heat-4: var(--ds-chart-heat-4);
+  --color-fg-subtle: var(--ds-fg-subtle);
+  --color-line: var(--ds-line);
+  --color-line-strong: var(--ds-line-strong);
+  --color-line-strong-hover: var(--ds-line-strong-hover);
+  --color-line-tile: var(--ds-line-tile);
+  --color-sun-fg: var(--ds-sun-fg);
+  --color-primary: var(--ds-primary);
+  --color-primary-fg: var(--ds-primary-fg);
+  --color-primary-hover: var(--ds-primary-hover);
+  --color-action: var(--ds-action);
+  --color-action-fg: var(--ds-action-fg);
+  --color-action-hover: var(--ds-action-hover);
+  --color-accent: var(--ds-accent);
+  --color-accent-text: var(--ds-accent-text);
+  --color-focus: var(--ds-focus);
+  --color-warning: var(--ds-warning);
+  --color-warning-fg: var(--ds-warning-fg);
+  --color-danger: var(--ds-danger);
+  --color-danger-fg: var(--ds-danger-fg);
+  --color-success: var(--ds-success);
+  --color-scrim: var(--ds-scrim);
+  --color-viewer: var(--ds-viewer);
+
+  /* 间距由容器算（ds-tokens.css 末尾）：p-inset · gap-group · gap-item · gap-part；贴内边距的圆角 rounded-in */
+  --spacing-inset: var(--ds-inset);
+  --spacing-group: var(--ds-group);
+  --spacing-item: var(--ds-item);
+  --spacing-part: var(--ds-part);
+  --radius-in: var(--ds-r-in);
+
+  --radius-mark: var(--ds-r-mark);
+  --radius-card: var(--ds-r-card);
+  --radius-tile: var(--ds-r-tile);
+  --radius-media: var(--ds-r-media);
+  --radius-popover: var(--ds-r-popover);
+  --radius-popover-item: var(--ds-r-popover-item);
+  --radius-track: var(--ds-r-track);
+  --radius-track-item: var(--ds-r-track-item);
+  --radius-row: var(--ds-r-row);
+  --radius-control: var(--ds-r-control);
+  --radius-sm: var(--ds-r-sm);
+  --radius-control-in: var(--ds-r-control-in);
+  --radius-control-tag: var(--ds-r-control-tag);
+  --radius-track-tag: var(--ds-r-track-tag);
+  --radius-sm-in: var(--ds-r-sm-in);
+  --radius-control-action: var(--ds-r-control-action);
+  --radius-row-action: var(--ds-r-row-action);
+  --radius-card-in: var(--ds-r-card-in);
+  --radius-card-control: var(--ds-r-card-control);
+  --radius-window: var(--ds-r-window);
+  --radius-inherit: inherit;
+
+  --shadow-inset: var(--ds-shadow-inset);
+  --shadow-inset-focus: var(--ds-shadow-inset-focus);
+  --shadow-raised: var(--ds-shadow-raised);
+  --shadow-pressed: var(--ds-shadow-pressed);
+  --shadow-solid: var(--ds-shadow-solid);
+  --shadow-secondary: var(--ds-shadow-secondary);
+  --shadow-solid-pressed: var(--ds-shadow-solid-pressed);
+  --shadow-card: var(--ds-shadow-card);
+  --shadow-panel: var(--ds-shadow-panel);
+  --shadow-popover: var(--ds-shadow-popover);
+  --shadow-overlay: var(--ds-shadow-overlay);
+  --shadow-media: var(--ds-shadow-media);
+  --shadow-lift: var(--ds-shadow-lift);
+  --shadow-arch: var(--ds-shadow-arch);
+  --shadow-elevation-1: var(--ds-shadow-elevation-1);
+  --shadow-elevation-2: var(--ds-shadow-elevation-2);
+  --shadow-elevation-3: var(--ds-shadow-elevation-3);
+  --shadow-elevation-4: var(--ds-shadow-elevation-4);
+  --shadow-elevation-5: var(--ds-shadow-elevation-5);
+  --shadow-elevation-6: var(--ds-shadow-elevation-6);
+  --shadow-elevation-7: var(--ds-shadow-elevation-7);
+  --shadow-elevation-8: var(--ds-shadow-elevation-8);
+
+  /* 界面三档字号（13 / 15 / 17）来自基础参数；标题四档见下方 @theme */
+  --text-*: initial;
+  --font-weight-normal: var(--ds-weight-lead);
+  --font-weight-medium: var(--ds-weight-control);
+  --font-weight-semibold: var(--ds-weight-heading);
+  --text-xs: var(--ds-text-xs);
+  --text-xs--line-height: var(--ds-lh-xs);
+  --text-nav: var(--ds-text-nav);
+  --text-nav--line-height: var(--ds-lh-sm);
+  --text-sm: var(--ds-text-sm);
+  --text-sm--line-height: var(--ds-lh-sm);
+  /*
+   * 输入类控件里打的字：精确指针 15、触屏 16（--ds-text-field），行高同 text-sm。不是新的一档字号。
+   * 类名用 text-md 而不是 text-field：组件经 cn()（tailwind-merge 默认配置）合并类名，它只认 xs / sm / md / lg / xl 这类名字是字号，
+   * text-field 会被当成文字颜色，和同一串里的 text-fg 冲突而被删掉。
+   */
+  --text-md: var(--ds-text-field);
+  --text-md--line-height: var(--ds-lh-sm);
+  --text-base: var(--ds-text-base);
+  --text-base--line-height: var(--ds-lh-base);
+
+  --font-sans: var(--ds-font-sans);
+  --font-display: var(--ds-font-display);
+  --font-mono: var(--ds-font-mono);
+
+  --ease-ds: var(--ds-ease);
+  --ease-ds-media: var(--ds-ease-media);
+  --ease-ds-expo: var(--ds-ease-expo);
+}
+
+/*
+ * 字号只有 7 档（替换 Tailwind 默认刻度）：注释 · 界面 · 阅读（这三档来自基础参数，在上面的 @theme inline）· 20 三级标题 · 24 二级标题 · 30 一级标题 · 40 页面标题；
+ * 另有展示两档 56 与字标，只在布局区块里用。
+ * 不写任意像素字号。
+ */
+@theme {
+  --text-lg: 20px;
+  --text-lg--line-height: 26px;
+  --text-xl: 24px;
+  --text-xl--line-height: 30px;
+  --text-2xl: 30px;
+  --text-2xl--line-height: 38px;
+  --text-3xl: 40px;
+  --text-3xl--line-height: 48px;
+  /* 展示两档：只给布局区块（落地页首屏标题、落款字标），业务界面不用。字标随所在容器变宽（cqi），需要祖先是 @container */
+  --text-4xl: 56px;
+  --text-4xl--line-height: 60px;
+  --text-mark: clamp(64px, 16cqi, 208px);
+  --text-mark--line-height: 0.9;
+}
+
+/*
+ * 连续圆角：语义圆角类都带上拐角形状（支持时是超椭圆，见 ds-tokens.css）。
+ * rounded-full、rounded-none 不加：圆点、头像、胶囊保持正圆。组件自带语义圆角、使用方再写 rounded-full 时（圆形图标按钮），
+ * 两个类会同时在（tailwind-merge 不认识语义圆角类），所以要显式排除，否则无穷大的圆角配上超椭圆成了方圆（2026-10-04 帮助圆钮）。
+ */
+:where(.rounded-sm, .rounded-control, .rounded-row, .rounded-track, .rounded-track-item, .rounded-popover, .rounded-popover-item, .rounded-card, .rounded-tile, .rounded-media, .rounded-tl-card, .rounded-t-media, .rounded-in, .rounded-control-in, .rounded-control-tag, .rounded-track-tag, .rounded-sm-in, .rounded-control-action, .rounded-row-action, .rounded-card-in, .rounded-card-control, .rounded-window):where(:not(.rounded-full, .rounded-none)) {
+  corner-shape: var(--ds-corner-shape);
+}
+/* 圆角形状会继承：父面是超椭圆时，圆钮仍须显式回到 round。 */
+.rounded-full, .rounded-none { corner-shape: round; }
+.rounded-inherit { corner-shape: inherit; }
+.rounded-t-popover { corner-top-left-shape: var(--ds-corner-shape); corner-top-right-shape: var(--ds-corner-shape); }
+
+/*
+ * 焦点环（2026-10-05）：只用这两个类，配变体写 focus-visible:focus-ring。
+ * 用 outline 不用 box-shadow：inset 阴影画在元素自己的背景层，选中底（负 z 的提起层）、铺满的图片会把它盖住，键盘焦点就看不见了；
+ * outline 画在内容之上，跟随圆角与 corner-shape。focus-ring 是内侧 2px（有底色盒的控件）；
+ * focus-ring-out 是外侧 2px、离边 2px（没有内边距的文字链接，内侧环会压在字上）。
+ * 开发时 src/site/dev/focus-guard.tsx 在每次键盘聚焦时量：环被子层盖住、压字、没有环，都直接让页面崩溃。
+ */
+@utility focus-ring {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: var(--ds-ring-offset);
+}
+/*
+ * 带外侧 1px 线的面（card / popover / overlay / media 阴影的第一层是 0 0 0 1px line）：环往外挪 1px，正好压住那条线。
+ * 不挪时蓝环里面 2px、外面还剩一圈 1px 灰线，成了双线（2026-10-06 Composer 实测：y 134–135 灰、136–139 蓝）。
+ * 外缘落在线的外缘，环看起来仍是 2px。按类名包含匹配，带变体前缀的（has-[…]:shadow-popover）也算。
+ */
+@property --ds-ring-offset { syntax: "<length>"; inherits: false; initial-value: -2px; } /* 不继承：卡里的按钮仍是内侧 2px */
+:where([class*="shadow-card"], [class*="shadow-popover"], [class*="shadow-overlay"], [class*="shadow-media"], [class*="shadow-elevation"], [data-elevation-shadow]) {
+  --ds-ring-offset: -1px;
+}
+@utility focus-ring-out {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+/*
+ * 区的焦点环（2026-10-06）：可聚焦的「区」（图表绘图区、标签页面板、滚动区、轮播视口）不是控件，字贴着区的边排；
+ * 外侧 2px、离边 6——区内文字离环 ≥ 6，和「底色块不贴字」同一个数（focus-guard 的区不贴字）。环外伸 8：区的外面要留得下，不被 overflow 裁。
+ * 区连着自己的刻度、轴、标签时，环画在把它们一起包住的外壳上（has-[…:focus-visible]:focus-ring-zone），不从刻度字中间穿过。
+ */
+@utility focus-ring-zone {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 6px;
+}
+
+/* 只在临时浮层内提起小面；页级 Card / Surface 保持透明（DESIGN.md §0.1）。 */
+:where([role="dialog"], [data-slot="popover-content"], [data-slot="hover-card"], [role="menu"], [data-slot="command-dialog"]) {
+  --ds-panel-padding: 1;
+  --ds-panel: var(--ds-card);
+  --ds-shadow-panel: var(--ds-shadow-card);
+}
+
+/*
+ * 所在的面（--ds-surface，2026-10-07 收尾）：实底的面自己声明底色，里面要和面同色的东西（ListSection 吸顶底、Avatar / AvatarGroup 外圈、
+ * progressive-blur）直接读它，不在运行时往上量。没有面时回落画布色：var(--ds-surface, var(--ds-canvas))。
+ * - 实底类 bg-canvas / bg-sidebar / bg-card / bg-menu：底色就是面。
+ * - Card、Surface（tone=card）是 bg-panel：页级透明，--ds-surface 沿用外面的面；只有在浮层里提成白面时才声明。
+ * - Surface tone=well 是半透明凹槽，不声明（沿用外面的面，差 3% 看不出接缝）。
+ * 放在 components 层：调用处写的 [--ds-surface:…] 工具类（Split、可调分栏）优先。
+ */
+@layer components {
+  :where(.bg-canvas) { --ds-surface: var(--ds-canvas); }
+  :where(.bg-sidebar) { --ds-surface: var(--ds-sidebar); }
+  :where(.bg-card) { --ds-surface: var(--ds-card); }
+  :where(.bg-menu) { --ds-surface: var(--ds-menu); }
+  :where([role="dialog"], [data-slot="popover-content"], [data-slot="hover-card"], [role="menu"], [data-slot="command-dialog"])
+    :where([data-slot="card"], [data-slot="surface"][data-tone="card"]) {
+    --ds-surface: var(--ds-panel);
+  }
+}
+
+/*
+ * 面的层级（2026-10-07，DESIGN.md §4.1；ui/elevated.tsx 写 data-elevation / data-elevation-shadow）：
+ * 底色、所在的面（--ds-surface）、层号（--ds-level）跟着层走；阴影单独一个属性，弹层可以底色随层、阴影固定第 3 层。
+ * 深色的次级字随层提亮（--base-muted-lift，浅色为 0）：亮一层的面上灰字也亮一点，选中底上仍 ≥ 4.5。
+ * 放在 components 层、零权重：调用处写的 bg-* / shadow-* 工具类照常覆盖。
+ */
+@layer components {
+  :where([data-elevation]) {
+    --ds-fg-muted: color-mix(in srgb, var(--base-fg) calc(var(--base-muted-lift) * (var(--ds-level, 1) - 1)), var(--base-muted));
+    background-color: var(--ds-surface);
+  }
+  :where([data-elevation="1"]) { --ds-level: 1; --ds-surface: var(--ds-elevation-1); }
+  :where([data-elevation="2"]) { --ds-level: 2; --ds-surface: var(--ds-elevation-2); }
+  :where([data-elevation="3"]) { --ds-level: 3; --ds-surface: var(--ds-elevation-3); }
+  :where([data-elevation="4"]) { --ds-level: 4; --ds-surface: var(--ds-elevation-4); }
+  :where([data-elevation="5"]) { --ds-level: 5; --ds-surface: var(--ds-elevation-5); }
+  :where([data-elevation="6"]) { --ds-level: 6; --ds-surface: var(--ds-elevation-6); }
+  :where([data-elevation="7"]) { --ds-level: 7; --ds-surface: var(--ds-elevation-7); }
+  :where([data-elevation="8"]) { --ds-level: 8; --ds-surface: var(--ds-elevation-8); }
+  :where([data-elevation-shadow="1"]) { box-shadow: var(--ds-shadow-elevation-1); }
+  :where([data-elevation-shadow="2"]) { box-shadow: var(--ds-shadow-elevation-2); }
+  :where([data-elevation-shadow="3"]) { box-shadow: var(--ds-shadow-elevation-3); }
+  :where([data-elevation-shadow="4"]) { box-shadow: var(--ds-shadow-elevation-4); }
+  :where([data-elevation-shadow="5"]) { box-shadow: var(--ds-shadow-elevation-5); }
+  :where([data-elevation-shadow="6"]) { box-shadow: var(--ds-shadow-elevation-6); }
+  :where([data-elevation-shadow="7"]) { box-shadow: var(--ds-shadow-elevation-7); }
+  :where([data-elevation-shadow="8"]) { box-shadow: var(--ds-shadow-elevation-8); }
+}
+
+/*
+ * 按钮的默认圆角（2026-10-07 收尾）：写在 components 层、零权重，调用处写的任何圆角类（rounded-card-control、rounded-sm-in、rounded-full）
+ * 都在 utilities 层，直接生效，不用加 !。原先默认圆角是 size 里的 rounded-sm / rounded-control 类，和调用处的语境圆角同在 utilities 层，
+ * 谁赢看 Tailwind 生成顺序：rounded-sm 排在 rounded-card-* 之后，语境圆角失效。data-radius 由 Button 按 size 给出。
+ */
+@layer components {
+  :where([data-radius="sm"]) { border-radius: var(--radius-sm); corner-shape: var(--ds-corner-shape); }
+  :where([data-radius="control"]) { border-radius: var(--radius-control); corner-shape: var(--ds-corner-shape); }
+}
+
+/* 模态遮罩唯一允许的背景模糊；值固定，不逐帧动画（DESIGN.md §9.3）。 */
+@utility scrim-blur {
+  backdrop-filter: blur(var(--ds-scrim-blur));
+}
+
+/* 换深浅色的那一帧不做任何过渡（rauno：主题切换不过渡）：切换方在 <html> 上临时设 data-switching */
+[data-switching] *,
+[data-switching] *::before,
+[data-switching] *::after {
+  transition: none !important;
+}
+
+@layer base {
+  html {
+    font-family: var(--ds-font-sans);
+    /* 标识（文件名、路径、邮箱）不能被自动拆开；需要间距的文案在语义边界显式写空格。 */
+    text-autospace: no-autospace;
+    color: var(--ds-fg);
+    background: var(--ds-canvas);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 图标线宽：任何尺寸下都是 1.5px，与 MorphIcon 一致。 */
+  svg.lucide {
+    stroke-width: 1.5;
+  }
+  svg.lucide :is(path, line, polyline, polygon, rect, circle, ellipse, g) {
+    vector-effect: non-scaling-stroke;
+  }
+  /* 滚动条：细、无轨道、无边线；颜色与分隔线同级。 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ds-line-strong) transparent;
+  }
+}
+
+/* 滚动条槽是布局的一部分（DESIGN.md §3.3a）：背景、圆角和热区都停在槽外，隐藏时也保留。 */
+@utility scroll-safe {
+  scrollbar-gutter: stable;
+  padding-inline-end: var(--ds-scroll-safe);
+  /* 滚动边缘淡出（fade-* / scroll-fade）不盖滚动条槽 */
+  --ds-fade-gutter: var(--ds-scroll-safe);
+}
+@utility scroll-safe-x {
+  padding-block-end: var(--ds-scroll-safe);
+}
+/* 触屏的横向滚动条浮在内容上、停手就隐去，不占槽：底部 16 只会让「滚不滚」两种宽度下的间距不一样（2026-10-06 热力图 390：格到图例 32 对 16） */
+@media (pointer: coarse) {
+  .scroll-safe-x {
+    padding-block-end: 0;
+  }
+}
+/*
+ * 浮层里的短列表（候选、命令、多选）：不会滚动时左右对称，会滚动时才给滚动条让位（2026-10-06 combobox：3 项也右 16 左 6）。
+ * 列表自己四边写同一个内边距（--ds-pad-popover）；溢出时子元素右边再让出 scroll-safe − pad，合起来仍是 16。
+ * 用 scroll-state 容器查询判断「会不会滚」；不支持的浏览器照旧一直让位（和 scroll-safe 一样）。
+ * 内容从不溢出变成溢出（筛选时）右边会收进 10px：只影响行尾，字不动，接受（DESIGN.md §3.9）。
+ */
+@utility scroll-safe-fit {
+  container-type: scroll-state;
+}
+/* 零特异性：子元素自己写的外边距（分隔线的 -mx）照常生效 */
+@supports not (container-type: scroll-state) {
+  :where(.scroll-safe-fit) > * {
+    margin-inline-end: calc(var(--ds-scroll-safe) - var(--ds-pad-popover));
+  }
+}
+@container scroll-state(scrollable: y) {
+  :where(.scroll-safe-fit) > * {
+    margin-inline-end: calc(var(--ds-scroll-safe) - var(--ds-pad-popover));
+  }
+}
+
+/*
+ * 光学对齐：对齐看得见的墨迹，不看盒子。
+ * 无底色的图标按钮（ghost、size=icon）四周有 (控件高 − 16) / 2 的透明内边距，16 网格图标自身还留白约 1px；
+ * 它放在一行的开头或末尾时，用 edge-start / edge-end 把透明部分推到内容线外面，图标的线条才落在内容线上。
+ * 光秃秃的 16 图标放在一列文字的开头时用 glyph-start。悬停出现的底色会越过内容线，这是对的：底色是临时的，线条是常在的。
+ * 带字的按钮、行内选择器同理，推出去的是它自己的左右内边距：组件在自己身上写 --ds-edge（按钮各尺寸 = --ds-pad-x-*；左右不等时写 --ds-edge-start / --ds-edge-end，按钮有图标那一侧少 4），
+ * 不写时按图标按钮算 (控件高 − 16) / 2。（用户 2026-09-28：参数卡右列「复制」「默认 ⌄」和「浅色 ⌄」没对齐同一条线。）
+ * 线条比一般图标更窄的在按钮上设 --ds-ink-inset（☰ 2px、⌄ 3px、› 5px），整只按钮多推出去；
+ * 绝不在盒子里挪图标——那样悬停底色一出来，图标就不在底色正中了。
+ */
+@utility edge-start {
+  margin-inline-start: calc(-1 * var(--ds-edge-start, var(--ds-edge, (var(--ds-h-md) - 16px) / 2)) - var(--ds-ink-inset, 1px));
+}
+@utility edge-end {
+  margin-inline-end: calc(-1 * var(--ds-edge-end, var(--ds-edge, (var(--ds-h-md) - 16px) / 2)) - var(--ds-ink-inset, 1px));
+}
+@utility glyph-start {
+  margin-inline-start: -1px;
+}
+
+/*
+ * 滚动区底部渐隐（DESIGN.md §4.4、dd-01《渐隐边缘不要覆盖滚动条》）：遮罩只盖内容，滚动条安全区不盖，
+ * 滚动条始终完整可见。不依赖底色，浮层和侧栏都能用。
+ */
+/*
+ * 渐隐（原先的「渐进模糊」去掉了 backdrop-filter：DESIGN.md §10 只用实底，模糊层滚动时每帧重新取样也耗性能，2026-10-01）：
+ * 贴顶的栏不画底线，下面的内容越靠近栏越淡，没入底色，边界靠「看不清」而不是一条线。
+ * 用在 sticky 栏里一个 absolute 的空元素上（栏本身要 isolate）。类名沿用 progressive-blur，使用方不用改。
+ */
+@utility progressive-blur {
+  position: absolute;
+  inset: 0 0 -20px 0;
+  z-index: -1;
+  pointer-events: none;
+  /* 底色跟着所在的面走：跟着所在的面；SplitPane 设为画布色，白色浮面可另设 --ds-surface */
+  background: linear-gradient(
+    to bottom,
+    var(--ds-surface, var(--ds-canvas)) 40%,
+    color-mix(in srgb, var(--ds-surface, var(--ds-canvas)) 70%, transparent) 70%,
+    transparent
+  );
+}
+
+/* 8px 方格（参考线）：检查间距是否落在刻度上 */
+@utility guide-grid {
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--ds-accent) 12%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--ds-accent) 12%, transparent) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+/*
+ * 滚动边缘淡出（2026-10-07，DESIGN.md §3.9）：跟着滚动走，哪一边还有内容才淡，滚到真正的顶 / 底时那一边是清楚的。
+ * 原先 fade-top / fade-bottom 是静态遮罩：滚到底时最后一行仍被淡掉，内容不够长时也淡。
+ * 做法：CSS 滚动驱动动画把滚动位置换成两个数（--ds-fade-start / --ds-fade-end，1 = 清楚、0 = 淡），遮罩渐变读它们；不用 JS。
+ *   开头一边：滚动 0 → 48px 时由清楚变淡；结尾一边：离底 48px → 0 时由淡变清楚。内容不溢出时时间轴不生效，两边都清楚。
+ * 不支持滚动驱动动画的浏览器（目前 Firefox）不淡：静态淡出会盖在已经到头的边上。
+ * 淡出宽 48（--ds-fade-size，可在调用处改）；带 scroll-safe 的容器不盖滚动条槽（--ds-fade-gutter）。
+ * 类：fade-top 只淡上边 · fade-bottom 只淡下边 · scroll-fade 上下 · scroll-fade-x 左右；都放在滚动容器自己身上。
+ */
+@property --ds-fade-start { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --ds-fade-end { syntax: "<number>"; inherits: false; initial-value: 1; }
+@keyframes ds-fade-start { from { --ds-fade-start: 1; } to { --ds-fade-start: 0; } }
+@keyframes ds-fade-end { from { --ds-fade-end: 0; } to { --ds-fade-end: 1; } }
+@utility fade-top {
+  --ds-fade-size: 48px;
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / var(--ds-fade-start)), #000 var(--ds-fade-size)), linear-gradient(#000, #000);
+    mask-size: calc(100% - var(--ds-fade-gutter, 0px)) 100%, var(--ds-fade-gutter, 0px) 100%;
+    mask-position: left top, right top;
+    mask-repeat: no-repeat;
+    animation: ds-fade-start both linear;
+    animation-timeline: scroll(self);
+    animation-range: 0 var(--ds-fade-size);
+  }
+}
+@utility fade-bottom {
+  --ds-fade-size: 48px;
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--ds-fade-size)), rgb(0 0 0 / var(--ds-fade-end))), linear-gradient(#000, #000);
+    mask-size: calc(100% - var(--ds-fade-gutter, 0px)) 100%, var(--ds-fade-gutter, 0px) 100%;
+    mask-position: left top, right top;
+    mask-repeat: no-repeat;
+    animation: ds-fade-end both linear;
+    animation-timeline: scroll(self);
+    animation-range: calc(100% - var(--ds-fade-size)) 100%;
+  }
+}
+@utility scroll-fade {
+  --ds-fade-size: 48px;
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / var(--ds-fade-start)), #000 var(--ds-fade-size), #000 calc(100% - var(--ds-fade-size)), rgb(0 0 0 / var(--ds-fade-end))),
+      linear-gradient(#000, #000);
+    mask-size: calc(100% - var(--ds-fade-gutter, 0px)) 100%, var(--ds-fade-gutter, 0px) 100%;
+    mask-position: left top, right top;
+    mask-repeat: no-repeat;
+    animation: ds-fade-start both linear, ds-fade-end both linear;
+    animation-timeline: scroll(self), scroll(self);
+    animation-range: 0 var(--ds-fade-size), calc(100% - var(--ds-fade-size)) 100%;
+  }
+}
+/* 横向：滚动条在底边，横向滚动条槽不另让（scroll-safe-x 是下内边距，不在遮罩的左右方向上） */
+@utility scroll-fade-x {
+  --ds-fade-size: 48px;
+  @supports (animation-timeline: scroll()) {
+    mask-image: linear-gradient(to right, rgb(0 0 0 / var(--ds-fade-start)), #000 var(--ds-fade-size), #000 calc(100% - var(--ds-fade-size)), rgb(0 0 0 / var(--ds-fade-end)));
+    animation: ds-fade-start both linear, ds-fade-end both linear;
+    animation-timeline: scroll(self inline), scroll(self inline);
+    animation-range: 0 var(--ds-fade-size), calc(100% - var(--ds-fade-size)) 100%;
+  }
+}
+/*
+ * 滚动边线：要一条线标出「这一边还有」时用它，不画在滚动区里面（会被上面的遮罩擦掉），画在包住滚动区的外层上，
+ * 借里面滚动区的时间轴（timeline-scope）：上线在内容滚过开头 48px 时淡入，下线在离底 48px 内淡出。
+ * 用法：<div class="scroll-divider"><div class="scroll-fade overflow-y-auto">…</div></div>；外层是面板第一个子元素时没有上线（上面没有东西可滚过）。
+ * 线离两边的距离：--ds-divider-inset（默认 0）。不支持的浏览器既没有线也没有淡出。
+ */
+@keyframes ds-divider-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ds-divider-out { from { opacity: 1; } to { opacity: 0; } }
+@utility scroll-divider {
+  @supports (timeline-scope: --ds-scroller) {
+    position: relative;
+    timeline-scope: --ds-scroller;
+    & :where(.scroll-fade, .fade-top, .fade-bottom) {
+      scroll-timeline-name: --ds-scroller;
+    }
+    &::before,
+    &::after {
+      content: "";
+      position: absolute;
+      inset-inline: var(--ds-divider-inset, 0px);
+      height: 1px;
+      background-color: var(--ds-line);
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0;
+    }
+    &::before {
+      top: 0;
+      animation: ds-divider-in both linear;
+      animation-timeline: --ds-scroller;
+      animation-range: 0 48px;
+    }
+    &:first-child::before {
+      content: none;
+    }
+    &::after {
+      bottom: 0;
+      animation: ds-divider-out both linear;
+      animation-timeline: --ds-scroller;
+      animation-range: calc(100% - 48px) 100%;
+    }
+  }
+}
+
+/*
+ * 固定高度控件里的字：裁掉行盒上下多余部分（大写字母顶到字母基线），按大写字母的高度居中（DESIGN.md §4.1，2026-10-07）。
+ * 实测（docs/验收/2026-10-07-专业方法/surfaces/text-trim.json，36 / 28 高，汉字、拉丁、混排各量墨迹）：
+ * - Su 的字体栈（Inter 打头）：加不加墨迹位置完全一样，偏移都 ≤ 0.5px（1 个物理像素）。Inter 的上下行高本来就让大写字母落在行盒正中。
+ * - 苹方打头（没有 Inter）：加了反而让汉字下沉 1px（−0.5 → +0.5），拉丁 −0.25 → +0.75。
+ * 所以 Su 的组件默认不加；只在换成上下不对称的字体、量过确实更正时用。只给单行、外框高度固定的字；多行正文不用（会吃掉行间距）。
+ */
+@utility text-trim {
+  text-box: trim-both cap alphabetic;
+}
+
+/*
+ * DESIGN.md §4.6：小控件保留视觉尺寸，由原件的透明伪元素补足真实热区。
+ * 热区只负责「往外补」，不盖住自己的子元素（2026-10-06：日程按钮的 ::after 是 z-1、铺满整块，下沿拖拽把手点不到，改长短变成了挪动）：
+ * 元素自己 isolate 成一层，::after 放在这一层的最底（z −1）——在自己底色之上、所有子元素之下；
+ * 伸出元素外的那圈仍属于这一层，照旧压过同层排在前面的内容。子热区不用再写 z ≥ 2。
+ */
+:is([data-hit-area], .hit-area, [data-slot="tabs-trigger"], [data-slot="segmented-item"], [data-slot="chip"], [data-slot="checkbox"], [data-slot="radio-group-item"], [data-slot="switch"]) {
+  --ds-hit-min: 24px;
+  isolation: isolate;
+}
+:is([data-slot="checkbox"], [data-slot="radio-group-item"], [data-slot="switch"]) {
+  position: relative;
+}
+:is([data-hit-area], .hit-area, [data-slot="tabs-trigger"], [data-slot="segmented-item"], [data-slot="chip"], [data-slot="checkbox"], [data-slot="radio-group-item"], [data-slot="switch"])::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--ds-hit-min));
+  height: max(100%, var(--ds-hit-min));
+  translate: -50% -50%;
+}
+@media (pointer: coarse) {
+  :is([data-hit-area], .hit-area, [data-slot="tabs-trigger"], [data-slot="segmented-item"], [data-slot="chip"], [data-slot="checkbox"], [data-slot="radio-group-item"], [data-slot="switch"]) {
+    --ds-hit-min: 44px;
+  }
+  /* 相邻选项各有独立范围，透明热区不互相抢点击。 */
+  :is([data-hit-area]:not([data-size^="icon"]), .hit-area:not([data-slot="product-gallery-swatch"], .rounded-full), [data-slot="tabs-trigger"], [data-slot="segmented-item"], [data-slot="chip"]) {
+    min-width: 44px;
+  }
+}
+
+@media (pointer: coarse) {
+  /* 相邻小控件的行至少44高，伪元素热区不覆盖下一行。 */
+  label:has(> :is([data-slot="checkbox"], [data-slot="radio-group-item"])) { min-height: 44px; }
+}
+
+/*
+ * 字段里的附属按钮（显示密码、清空、加减、展开箭头）：键盘焦点不再自己画环——字段的线已经因为 focus-within 变成强调色，
+ * 里面再画一圈就是两条线叠在一起（2026-10-05 用户：「为什么还有一个灰色的线，而不是把原本灰色的线变成蓝色？」）。
+ * 改成按钮自己的底色加深一档，告诉人焦点停在它身上。不分层：要压过各组件里写的 focus-visible:focus-ring。
+ */
+.ds-field :is(button, [role="button"]):not([data-slot="shortcut-recorder-button"]):focus-visible {
+  outline: none;
+  background-color: var(--ds-active);
+}
+/*
+ * 16px 的部件（清空 ⓧ 这类 size-4 圆钮）底色全被图标盖住，加深看不见（2026-10-06 expanding-search、shortcut-recorder）：
+ * 加深的底往外铺 4px，凑够 24（= 最小热区），跟着它自己的圆角。只用 box-shadow 扩散，不改尺寸，布局不动。
+ */
+.ds-field :is(button, [role="button"]).size-4:not([data-slot="shortcut-recorder-button"]):focus-visible {
+  box-shadow: 0 0 0 4px var(--ds-active);
+}
+
+/*
+ * 中文排版细节（2026-10-05 用户给的学习材料：Apple 官网中文排版，研究见 docs/研究/苹果中文排版细节.md；DESIGN.md §6）。
+ * - 所有文字的末行不留单个字：text-wrap-style: pretty 写在 html 上、往下继承（Apple 手工用 nowrap 包住段末词，浏览器能自动做的不手写）。
+ *   原先只给 p/li/dd/td/th/blockquote/figcaption，组件里写在 div、span 里的段落（手风琴的标题与答案）漏掉了（2026-10-06）。
+ *   只写 text-wrap-style，不写 text-wrap 简写：简写会把 text-wrap-mode 一并设回 wrap。要 balance 的标题照常写 text-balance 覆盖。
+ * - 行首的开引号、开括号按半宽排：text-spacing-trim: trim-start，字的左缘仍落在列线上（DESIGN.md §3.2 一列两条线）。
+ *   全角「」（） 的字形在字身的一半，不挤压时行首像缩进了半个字。
+ */
+@layer base {
+  html {
+    text-spacing-trim: trim-start;
+    text-wrap-style: pretty;
+  }
+}

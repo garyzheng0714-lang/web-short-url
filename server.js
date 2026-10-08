@@ -1,204 +1,60 @@
 import "dotenv/config";
-import crypto from "crypto";
+import crypto from "node:crypto";
+import dns from "node:dns/promises";
+import fs from "node:fs";
+import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cookieParser from "cookie-parser";
-import Database from "better-sqlite3";
-import path from "path";
 import QRCode from "qrcode";
-import { fileURLToPath } from "url";
+
+import { openDatabase, statementCache, localUserId } from "./lib/db.js";
 import { createFeishuRouter } from "./lib/feishu_auth.js";
+import { createXiaomarkClient } from "./lib/xiaomark.js";
+import { createSyncEngine } from "./lib/sync.js";
+import { createApiRouter, ok, fail } from "./lib/api.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const log = (level, msg) => (level === "error" ? console.error : level === "warn" ? console.warn : console.log)(`[${new Date().toISOString()}] ${msg}`);
 
-// ===== Database Setup =====
-const db = new Database(path.join(__dirname, "shorturl.db"));
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+// ===== 配置 =====
+const PORT = Number(process.env.PORT || 3000);
+const DB_PATH = path.resolve(__dirname, process.env.DB_PATH || "shorturl.db");
+const SERVER_API_KEY = process.env.XIAOMARK_API_KEY?.trim() || "";
+const SYNC_ENABLED = (process.env.SYNC_ENABLED || "true").toLowerCase() !== "false";
+const ADMIN_FEISHU_OPEN_IDS = new Set((process.env.ADMIN_FEISHU_OPEN_IDS || "").split(",").map((s) => s.trim()).filter(Boolean));
+const ALLOWED_GO_HOSTS = new Set((process.env.ALLOWED_GO_HOSTS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 天滑动续期
+const SESSION_COOKIE_NAME = "shorturl_session";
+const WEB_DIST = path.join(__dirname, "web", "dist");
+const PUBLIC_DIR = path.join(__dirname, "public");
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    open_id    TEXT PRIMARY KEY,
-    name       TEXT NOT NULL DEFAULT '',
-    avatar_url TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
+// ===== 数据库 =====
+const { db, migrationsRan } = openDatabase(DB_PATH);
+const q = statementCache(db);
+if (migrationsRan.length) log("info", `schema migrations applied: ${migrationsRan.join(", ")}`);
 
-  CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
-    open_id    TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (open_id) REFERENCES users(open_id)
-  );
+// ===== 小码客户端 + 同步引擎 =====
+const xm = SERVER_API_KEY
+  ? createXiaomarkClient({
+      apikey: SERVER_API_KEY,
+      concurrency: Number(process.env.SYNC_CONCURRENCY || 2),
+      log,
+    })
+  : null;
+const sync = xm
+  ? createSyncEngine({ db, q, xm, log, options: { tickMs: Number(process.env.SYNC_TICK_MS || 5 * 60_000) } })
+  : null;
 
-  CREATE TABLE IF NOT EXISTS link_history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    open_id     TEXT NOT NULL,
-    link_url    TEXT NOT NULL,
-    target_url  TEXT NOT NULL,
-    name        TEXT DEFAULT '',
-    domain      TEXT DEFAULT '',
-    group_id    TEXT DEFAULT '',
-    group_name  TEXT DEFAULT '',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (open_id) REFERENCES users(open_id)
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_sessions_open_id ON sessions(open_id);
-  CREATE INDEX IF NOT EXISTS idx_link_history_open_id ON link_history(open_id);
-`);
-
-// Schema migration: 双租户字段（兼容老库）
-const existingUserCols = new Set(db.prepare(`PRAGMA table_info(users)`).all().map((c) => c.name));
-for (const [col, type] of [
-  ["feishu_open_id", "TEXT DEFAULT ''"],
-  ["tenant", "TEXT DEFAULT ''"],
-  ["tenant_key", "TEXT DEFAULT ''"],
-  ["union_id", "TEXT DEFAULT ''"],
-  ["user_id", "TEXT DEFAULT ''"],
-  ["email", "TEXT DEFAULT ''"],
-]) {
-  if (!existingUserCols.has(col)) {
-    db.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
-  }
-}
-
-function localUserId(tenant, openId) {
-  return `${tenant || "unknown"}:${openId}`;
-}
-
-const stmtFindUserByOpenId = db.prepare(`SELECT open_id FROM users WHERE open_id = ?`);
-const migrateLegacyUserIds = db.transaction(() => {
-  const legacyRows = db
-    .prepare(
-      `SELECT open_id, tenant
-       FROM users
-       WHERE tenant IN ('fbif', 'fude')
-         AND open_id NOT LIKE 'fbif:%'
-         AND open_id NOT LIKE 'fude:%'`
-    )
-    .all();
-
-  const insertNamespacedUser = db.prepare(`
-    INSERT INTO users (
-      open_id, feishu_open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email,
-      created_at, updated_at
-    )
-    SELECT
-      ?, open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email,
-      created_at, datetime('now')
-    FROM users
-    WHERE open_id = ?
-  `);
-  const moveSessions = db.prepare(`UPDATE sessions SET open_id = ? WHERE open_id = ?`);
-  const moveHistory = db.prepare(`UPDATE link_history SET open_id = ? WHERE open_id = ?`);
-  const deleteLegacyUser = db.prepare(`DELETE FROM users WHERE open_id = ?`);
-  const fillNamespacedFeishuOpenId = db.prepare(
-    `UPDATE users SET feishu_open_id = ? WHERE open_id = ? AND COALESCE(feishu_open_id, '') = ''`
-  );
-
-  for (const row of legacyRows) {
-    const nextId = localUserId(row.tenant, row.open_id);
-    if (!stmtFindUserByOpenId.get(nextId)) {
-      insertNamespacedUser.run(nextId, row.open_id);
-    }
-    fillNamespacedFeishuOpenId.run(row.open_id, nextId);
-    moveSessions.run(nextId, row.open_id);
-    moveHistory.run(nextId, row.open_id);
-    deleteLegacyUser.run(row.open_id);
-  }
-
-  db.prepare(
-    `UPDATE users
-     SET feishu_open_id = open_id
-     WHERE COALESCE(feishu_open_id, '') = ''
-       AND open_id NOT LIKE 'fbif:%'
-       AND open_id NOT LIKE 'fude:%'`
-  ).run();
-  db.prepare(
-    `UPDATE users
-     SET feishu_open_id = substr(open_id, 6)
-     WHERE COALESCE(feishu_open_id, '') = ''
-       AND (open_id LIKE 'fbif:%' OR open_id LIKE 'fude:%')`
-  ).run();
-});
-migrateLegacyUserIds();
-
-// Prepared statements
-const stmtUpsertUser = db.prepare(`
-  INSERT INTO users (open_id, feishu_open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(open_id) DO UPDATE SET
-    feishu_open_id=excluded.feishu_open_id,
-    name=excluded.name,
-    avatar_url=excluded.avatar_url,
-    tenant=excluded.tenant,
-    tenant_key=excluded.tenant_key,
-    union_id=excluded.union_id,
-    user_id=excluded.user_id,
-    email=excluded.email,
-    updated_at=datetime('now')
-`);
-const stmtCreateSession = db.prepare(
-  `INSERT INTO sessions (token, open_id, expires_at) VALUES (?, ?, ?)`
-);
+// ===== Session =====
 const stmtGetSession = db.prepare(
-  `SELECT s.token, s.open_id, s.expires_at, u.feishu_open_id, u.name AS user_name, u.avatar_url, u.tenant, u.tenant_key
+  `SELECT s.token, s.open_id, s.expires_at, u.feishu_open_id, u.name AS user_name, u.avatar_url, u.tenant, u.tenant_key, u.role
    FROM sessions s JOIN users u ON s.open_id = u.open_id
    WHERE s.token = ? AND s.expires_at > datetime('now')`
 );
-const stmtTouchSession = db.prepare(
-  `UPDATE sessions SET expires_at = ? WHERE token = ?`
-);
-const stmtDeleteSession = db.prepare(`DELETE FROM sessions WHERE token = ?`);
-const stmtDeleteExpiredSessions = db.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`);
-const stmtInsertHistory = db.prepare(
-  `INSERT INTO link_history (open_id, link_url, target_url, name, domain, group_id, group_name) VALUES (?, ?, ?, ?, ?, ?, ?)`
-);
-const stmtGetHistory = db.prepare(
-  `SELECT * FROM link_history WHERE open_id = ? ORDER BY created_at DESC LIMIT 500`
-);
-const stmtDeleteHistoryItem = db.prepare(
-  `DELETE FROM link_history WHERE id = ? AND open_id = ?`
-);
-const stmtClearHistory = db.prepare(
-  `DELETE FROM link_history WHERE open_id = ?`
-);
+const stmtTouchSession = db.prepare(`UPDATE sessions SET expires_at = ? WHERE token = ?`);
 
-// 启动时清理过期 session
-try {
-  stmtDeleteExpiredSessions.run();
-} catch (e) {
-  console.warn("expired session cleanup failed:", e.message);
-}
-
-// ===== App Setup =====
-const app = express();
-const PORT = Number(process.env.PORT || 3000);
-const XIAOMARK_API_BASE = "https://api.xiaomark.com";
-const SERVER_API_KEY = process.env.XIAOMARK_API_KEY?.trim() || "";
-const CACHE_TTL_MS = Number(process.env.XIAOMARK_CACHE_TTL_MS || 30_000);
-const DEFAULT_WEBHOOK_CALLBACK_URL = process.env.DEFAULT_WEBHOOK_CALLBACK_URL?.trim() || "";
-const DEFAULT_WEBHOOK_SCENE = process.env.DEFAULT_WEBHOOK_SCENE?.trim() || "";
-
-const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 天滑动续期
-const SESSION_COOKIE_NAME = "shorturl_session";
-
-const cacheStore = new Map();
-
-// 部署在 Caddy/Nginx 反代后面，必须开 trust proxy 才能让 req.secure 正确反映 X-Forwarded-Proto
-app.set("trust proxy", 1);
-
-app.use(express.json({ limit: "256kb" }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public"), { index: false }));
-
-// ===== Auth Helpers =====
-
-// session token 来源候选：cookie、X-Session-Token header、Authorization Bearer、query 兜底
-// 这是为了应对飞书内嵌 / 隐私浏览器 / 客户电脑 cookie 丢失的场景
 function extractSessionTokens(req) {
   const tokens = [];
   const add = (value) => {
@@ -206,15 +62,10 @@ function extractSessionTokens(req) {
     const token = value.trim();
     if (token && !tokens.includes(token)) tokens.push(token);
   };
-
   add(req.cookies?.[SESSION_COOKIE_NAME]);
   add(req.headers["x-session-token"]);
-
   const auth = req.headers["authorization"];
-  if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) {
-    add(auth.slice(7));
-  }
-
+  if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) add(auth.slice(7));
   add(req.query?.session_token);
   return tokens;
 }
@@ -223,7 +74,6 @@ function resolveSession(req) {
   for (const token of extractSessionTokens(req)) {
     const row = stmtGetSession.get(token);
     if (!row) continue;
-    // 30 天滑动续期：每次成功解析就把 expires_at 推到 now+30d
     const newExpiry = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
     try {
       stmtTouchSession.run(newExpiry, token);
@@ -235,55 +85,61 @@ function resolveSession(req) {
 
 function requireAuth(req, res, next) {
   const session = resolveSession(req);
-  if (!session) {
-    return res.status(401).json({ code: -1, message: "未登录" });
-  }
+  if (!session) return res.status(401).json({ ok: false, error: { code: "unauthorized", message: "未登录" } });
   req.session = session;
   next();
 }
 
-// ===== Feishu OAuth Router（FBIF + 富的 双租户） =====
+try {
+  db.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`).run();
+} catch (e) {
+  log("warn", `expired session cleanup failed: ${e.message}`);
+}
 
-const feishuRouter = createFeishuRouter({
-  onLogin: async (user, tenant) => {
-    const appTenant = tenant || "";
-    const localId = localUserId(appTenant, user.open_id);
-    stmtUpsertUser.run(
-      localId,
-      user.open_id,
-      user.name || "",
-      user.avatar_url || null,
-      appTenant,
-      user.tenant_key || "",
-      user.union_id || "",
-      user.user_id || "",
-      user.email || ""
-    );
-    const sessionToken = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
-    stmtCreateSession.run(sessionToken, localId, expiresAt);
-    return { sessionToken, expiresAt };
-  },
-  onLogout: (token) => {
-    try {
-      stmtDeleteSession.run(token);
-    } catch (e) {
-      console.warn("logout delete session failed:", e.message);
-    }
-  },
-});
+// ===== App =====
+const app = express();
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use(express.json({ limit: "256kb" }));
+app.use(cookieParser());
 
-app.use(feishuRouter);
+// ===== 飞书登录（单应用） =====
+const stmtUpsertUser = db.prepare(`
+  INSERT INTO users (open_id, feishu_open_id, name, avatar_url, tenant, tenant_key, union_id, user_id, email, role)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(open_id) DO UPDATE SET
+    feishu_open_id=excluded.feishu_open_id, name=excluded.name, avatar_url=excluded.avatar_url, tenant=excluded.tenant,
+    tenant_key=excluded.tenant_key, union_id=excluded.union_id, user_id=excluded.user_id, email=excluded.email,
+    role=CASE WHEN excluded.role = 'admin' THEN 'admin' ELSE users.role END,
+    updated_at=datetime('now')`);
+const stmtCreateSession = db.prepare(`INSERT INTO sessions (token, open_id, expires_at) VALUES (?, ?, ?)`);
+const stmtDeleteSession = db.prepare(`DELETE FROM sessions WHERE token = ?`);
 
-// ===== Identity API =====
+app.use(
+  createFeishuRouter({
+    onLogin: async (user, tenant) => {
+      const localId = localUserId(tenant || "", user.open_id);
+      const role = ADMIN_FEISHU_OPEN_IDS.has(user.open_id) ? "admin" : "member";
+      stmtUpsertUser.run(localId, user.open_id, user.name || "", user.avatar_url || null, tenant || "", user.tenant_key || "", user.union_id || "", user.user_id || "", user.email || "", role);
+      const sessionToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
+      stmtCreateSession.run(sessionToken, localId, expiresAt);
+      return { sessionToken, expiresAt };
+    },
+    onLogout: (token) => {
+      try {
+        stmtDeleteSession.run(token);
+      } catch (e) {
+        log("warn", `logout delete session failed: ${e.message}`);
+      }
+    },
+  })
+);
 
+// ===== 身份与健康 =====
 app.get("/api/me", (req, res) => {
   const session = resolveSession(req);
-  if (!session) {
-    return req.query?.optional === "1"
-      ? res.json({ ok: false })
-      : res.status(401).json({ ok: false });
-  }
+  if (!session) return req.query?.optional === "1" ? res.json({ ok: false }) : res.status(401).json({ ok: false });
   res.json({
     ok: true,
     name: session.user_name,
@@ -291,144 +147,62 @@ app.get("/api/me", (req, res) => {
     open_id: session.feishu_open_id || session.open_id,
     tenant: session.tenant,
     tenant_key: session.tenant_key,
+    is_admin: session.role === "admin" || ADMIN_FEISHU_OPEN_IDS.has(session.feishu_open_id),
   });
 });
 
-// ===== History API =====
-app.get("/api/history", requireAuth, (req, res) => {
-  const items = stmtGetHistory.all(req.session.open_id);
-  res.json({ ok: true, items });
+app.get("/api/health", (_req, res) => {
+  const links = q(`SELECT COUNT(*) AS n FROM links WHERE missing_since IS NULL`).get().n;
+  res.json({ ok: true, serverTime: new Date().toISOString(), apiKeyConfigured: Boolean(SERVER_API_KEY), syncEnabled: Boolean(sync) && SYNC_ENABLED, links });
 });
 
-app.delete("/api/history/:id", requireAuth, (req, res) => {
-  const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ ok: false, error: "无效 ID" });
-  stmtDeleteHistoryItem.run(id, req.session.open_id);
-  res.json({ ok: true });
-});
-
-app.delete("/api/history", requireAuth, (req, res) => {
-  stmtClearHistory.run(req.session.open_id);
-  res.json({ ok: true });
-});
-
-app.post("/api/history/migrate", requireAuth, (req, res) => {
-  const items = req.body?.items;
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.json({ ok: true, migrated: 0 });
-  }
-
-  const insert = db.transaction((rows) => {
-    let count = 0;
-    for (const item of rows) {
-      const linkUrl = (item.linkUrl || item.link_url || "").trim();
-      const targetUrl = (item.targetUrl || item.target_url || "").trim();
-      if (!linkUrl || !targetUrl) continue;
-      stmtInsertHistory.run(
-        req.session.open_id,
-        linkUrl,
-        targetUrl,
-        (item.name || "").trim(),
-        (item.domain || "").trim(),
-        (item.groupId || item.group_id || "").trim(),
-        (item.groupName || item.group_name || "").trim()
-      );
-      count++;
-    }
-    return count;
-  });
-
-  const migrated = insert(items.slice(0, 500));
-  res.json({ ok: true, migrated });
-});
-
-// ===== Existing Helpers =====
-function hashApiKey(apikey) {
-  return crypto.createHash("sha1").update(apikey).digest("hex").slice(0, 8);
-}
-
-function getEffectiveApiKey(body = {}) {
-  const bodyKey = typeof body.apikey === "string" ? body.apikey.trim() : "";
-  return SERVER_API_KEY || bodyKey;
-}
-
-function cleanOptionalString(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
+// ===== 本地工具：二维码 / 跳转解析 / 跳转代理 =====
 function parseHttpUrl(value) {
-  const text = cleanOptionalString(value);
+  const text = typeof value === "string" ? value.trim() : "";
   if (!text) return null;
   try {
     const url = new URL(text);
-    if (!["http:", "https:"].includes(url.protocol)) return null;
-    return url;
+    return ["http:", "https:"].includes(url.protocol) ? url : null;
   } catch {
     return null;
   }
 }
 
-function asBoolean(value, defaultValue = false) {
-  return typeof value === "boolean" ? value : defaultValue;
-}
-
-function cacheGet(cacheKey) {
-  const entry = cacheStore.get(cacheKey);
-  if (!entry) return null;
-  const isFresh = Date.now() - entry.ts < CACHE_TTL_MS;
-  if (!isFresh) {
-    cacheStore.delete(cacheKey);
-    return null;
+function isPrivateIp(ip) {
+  const v = net.isIP(ip);
+  if (v === 4) {
+    const [a, b] = ip.split(".").map(Number);
+    return a === 10 || a === 127 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
   }
-  return entry.data;
-}
-
-function cacheSet(cacheKey, data) {
-  cacheStore.set(cacheKey, { ts: Date.now(), data });
-  return data;
-}
-
-async function postXiaomark(pathname, payload, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const upstreamRes = await fetch(`${XIAOMARK_API_BASE}${pathname}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    const text = await upstreamRes.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { code: -1, message: "Non-JSON response from upstream", raw: text };
-    }
-    return { status: upstreamRes.status || 502, ok: upstreamRes.ok, data };
-  } finally {
-    clearTimeout(timeout);
+  if (v === 6) {
+    const low = ip.toLowerCase();
+    if (low === "::1" || low === "::") return true;
+    if (low.startsWith("fc") || low.startsWith("fd") || low.startsWith("fe80")) return true;
+    if (low.startsWith("::ffff:")) return isPrivateIp(low.slice(7));
   }
+  return false;
 }
 
-async function resolveRedirectChain(inputUrl, { timeoutMs = 12000, maxHops = 5 } = {}) {
+async function assertPublicHost(hostname) {
+  if (net.isIP(hostname)) {
+    if (isPrivateIp(hostname)) throw new Error("不允许访问内网地址");
+    return;
+  }
+  if (hostname === "localhost" || hostname.endsWith(".local") || hostname.endsWith(".internal")) throw new Error("不允许访问内网地址");
+  const addrs = await dns.lookup(hostname, { all: true });
+  if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) throw new Error("不允许访问内网地址");
+}
+
+async function resolveRedirectChain(inputUrl, { timeoutMs = 10_000, maxHops = 6 } = {}) {
   const steps = [];
   let currentUrl = inputUrl;
-
   for (let i = 0; i < maxHops; i += 1) {
+    const u = new URL(currentUrl);
+    await assertPublicHost(u.hostname);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(currentUrl, {
-        method: "GET",
-        redirect: "manual",
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "short-url-tool/1.0 (+local redirect resolver)",
-        },
-      });
-
+      const res = await fetch(currentUrl, { method: "GET", redirect: "manual", signal: controller.signal, headers: { "User-Agent": "short-url-tool/1.0 (+redirect resolver)" } });
       const locationHeader = res.headers.get("location");
       let nextLocation = "";
       if (locationHeader) {
@@ -438,432 +212,117 @@ async function resolveRedirectChain(inputUrl, { timeoutMs = 12000, maxHops = 5 }
           nextLocation = locationHeader;
         }
       }
-
-      steps.push({
-        url: currentUrl,
-        status: res.status,
-        location: nextLocation || undefined,
-      });
-
+      steps.push({ url: currentUrl, status: res.status, location: nextLocation || undefined });
       if (res.status < 300 || res.status >= 400 || !nextLocation) {
-        return {
-          redirected: steps.some((step) => step.status >= 300 && step.status < 400),
-          finalUrl: currentUrl,
-          steps,
-        };
+        return { redirected: steps.some((s) => s.status >= 300 && s.status < 400), finalUrl: currentUrl, steps };
       }
-
       currentUrl = nextLocation;
     } finally {
       clearTimeout(timeout);
     }
   }
-
-  return {
-    redirected: true,
-    finalUrl: currentUrl,
-    steps,
-    truncated: true,
-  };
+  return { redirected: true, finalUrl: currentUrl, steps, truncated: true };
 }
-
-function sendError(res, status, message, detail) {
-  if (detail) {
-    console.warn("request failed:", detail);
-  }
-  return res.status(status).json({
-    code: -1,
-    message,
-  });
-}
-
-async function handleCachedListProxy({
-  req,
-  res,
-  path,
-  cacheKeyBase,
-  buildPayload,
-  timeoutMs,
-}) {
-  try {
-    const apikey = getEffectiveApiKey(req.body);
-    if (!apikey) {
-      return sendError(
-        res,
-        400,
-        "Missing apikey. Set XIAOMARK_API_KEY on server or provide apikey in the request body."
-      );
-    }
-
-    const payload = buildPayload(apikey);
-    const cacheKey = `${cacheKeyBase}:${hashApiKey(apikey)}:${JSON.stringify(payload)}`;
-    const cached = cacheGet(cacheKey);
-    if (cached) {
-      return res.json({ ...cached, _meta: { ...(cached._meta || {}), cache: "hit" } });
-    }
-
-    const upstream = await postXiaomark(path, payload, timeoutMs);
-    const responseBody = {
-      ...upstream.data,
-      _meta: {
-        cache: "miss",
-        upstreamStatus: upstream.status,
-      },
-    };
-    if (upstream.ok) {
-      cacheSet(cacheKey, responseBody);
-    }
-    return res.status(upstream.ok ? 200 : upstream.status).json(responseBody);
-  } catch (error) {
-    const isAbort = error?.name === "AbortError";
-    return sendError(
-      res,
-      isAbort ? 504 : 500,
-      isAbort ? "Upstream request timeout" : "Internal server error",
-      String(error?.message || error)
-    );
-  }
-}
-
-// ===== API Routes =====
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    serverTime: new Date().toISOString(),
-    apiKeyConfigured: Boolean(SERVER_API_KEY),
-    cacheTtlMs: CACHE_TTL_MS,
-  });
-});
-
-app.get("/api/config", requireAuth, (_req, res) => {
-  res.json({
-    apiKeyConfigured: Boolean(SERVER_API_KEY),
-    cacheTtlMs: CACHE_TTL_MS,
-    defaults: {
-      keyLength: 4,
-      escapeFromWechat: false,
-      advancedBotDetection: true,
-      webhookEnabled: true,
-      webhookCallbackUrl: DEFAULT_WEBHOOK_CALLBACK_URL,
-      webhookScene: DEFAULT_WEBHOOK_SCENE,
-    },
-    endpoints: {
-      projects: "/api/meta/projects",
-      groups: "/api/meta/groups",
-      createGroup: "/api/meta/groups/create",
-      privateDomains: "/api/meta/private-domains",
-      createLink: "/api/shortlinks/create",
-      qrCode: "/api/tools/qrcode",
-      resolveRedirect: "/api/tools/resolve-redirect",
-      redirectProxy: "/go",
-    },
-  });
-});
-
-app.post("/api/meta/projects", requireAuth, async (req, res) => {
-  return handleCachedListProxy({
-    req,
-    res,
-    path: "/v2/sl/project/get_all",
-    cacheKeyBase: "projects",
-    buildPayload: (apikey) => ({ apikey }),
-    timeoutMs: 10000,
-  });
-});
-
-app.post("/api/meta/private-domains", requireAuth, async (req, res) => {
-  return handleCachedListProxy({
-    req,
-    res,
-    path: "/v2/sl/private_domain/get_all",
-    cacheKeyBase: "private-domains",
-    buildPayload: (apikey) => ({ apikey }),
-    timeoutMs: 10000,
-  });
-});
-
-app.post("/api/meta/groups", requireAuth, async (req, res) => {
-  try {
-    const projectId = cleanOptionalString(req.body?.project_id);
-    if (!projectId) {
-      return sendError(res, 400, "project_id is required.");
-    }
-    return handleCachedListProxy({
-      req,
-      res,
-      path: "/v2/sl/group/batch_get",
-      cacheKeyBase: "groups",
-      buildPayload: (apikey) => ({
-        apikey,
-        project_id: projectId,
-        offset: 0,
-        count: 100,
-      }),
-      timeoutMs: 12000,
-    });
-  } catch (error) {
-    return sendError(res, 500, "Internal server error", String(error?.message || error));
-  }
-});
-
-app.post("/api/meta/groups/create", requireAuth, async (req, res) => {
-  try {
-    const body = req.body ?? {};
-    const apikey = getEffectiveApiKey(body);
-    const projectId = cleanOptionalString(body.project_id);
-    const name = cleanOptionalString(body.name);
-
-    if (!apikey) {
-      return sendError(
-        res,
-        400,
-        "Missing apikey. Set XIAOMARK_API_KEY on server or provide apikey in the request body."
-      );
-    }
-    if (!projectId) return sendError(res, 400, "project_id is required.");
-    if (!name) return sendError(res, 400, "name is required.");
-    if (name.length > 64) return sendError(res, 400, "name length must be <= 64.");
-
-    const upstream = await postXiaomark("/v2/sl/group/create", {
-      apikey,
-      project_id: projectId,
-      name,
-    });
-
-    if (upstream.data?.code === 0) {
-      const keyPrefix = `groups:${hashApiKey(apikey)}:`;
-      for (const cacheKey of cacheStore.keys()) {
-        if (cacheKey.startsWith(keyPrefix) && cacheKey.includes(projectId)) {
-          cacheStore.delete(cacheKey);
-        }
-      }
-    }
-
-    return res.status(upstream.ok ? 200 : upstream.status).json(upstream.data);
-  } catch (error) {
-    const isAbort = error?.name === "AbortError";
-    return sendError(
-      res,
-      isAbort ? 504 : 500,
-      isAbort ? "Upstream request timeout" : "Internal server error",
-      String(error?.message || error)
-    );
-  }
-});
-
-app.post("/api/shortlinks/create", requireAuth, async (req, res) => {
-  try {
-    const body = req.body ?? {};
-    const apikey = getEffectiveApiKey(body);
-    const groupId = cleanOptionalString(body.group_id);
-    const targetUrl = cleanOptionalString(body.target_url);
-
-    if (!apikey) {
-      return sendError(
-        res,
-        400,
-        "Missing apikey. Set XIAOMARK_API_KEY on server or provide apikey in form."
-      );
-    }
-    if (!groupId) return sendError(res, 400, "group_id is required.");
-    if (!targetUrl) return sendError(res, 400, "target_url is required.");
-
-    const parsedTarget = parseHttpUrl(targetUrl);
-    if (!parsedTarget) {
-      return sendError(res, 400, "target_url must use http:// or https://");
-    }
-
-    const rawKeyLength =
-      typeof body.key_length === "number"
-        ? body.key_length
-        : typeof body.key_length === "string" && body.key_length.trim()
-        ? Number(body.key_length)
-        : undefined;
-
-    const payload = {
-      apikey,
-      group_id: groupId,
-      target_url: targetUrl,
-      name: cleanOptionalString(body.name),
-      domain: cleanOptionalString(body.domain),
-      key: cleanOptionalString(body.key),
-      key_length: rawKeyLength,
-      escape_from_wechat: asBoolean(body.escape_from_wechat, false),
-      advanced_bot_detection: asBoolean(body.advanced_bot_detection, true),
-      webhook: asBoolean(body.webhook, true),
-      webhook_scene: cleanOptionalString(body.webhook_scene),
-    };
-
-    if (payload.escape_from_wechat && payload.advanced_bot_detection) {
-      return sendError(
-        res,
-        400,
-        "escape_from_wechat and advanced_bot_detection cannot both be enabled (per docs)."
-      );
-    }
-
-    if (
-      payload.key_length !== undefined &&
-      (!Number.isInteger(payload.key_length) || payload.key_length < 4 || payload.key_length > 8)
-    ) {
-      return sendError(res, 400, "key_length must be an integer between 4 and 8.");
-    }
-
-    if (!payload.webhook) delete payload.webhook_scene;
-
-    for (const key of ["name", "domain", "key", "webhook_scene"]) {
-      if (!payload[key]) delete payload[key];
-    }
-    if (payload.key_length === undefined || Number.isNaN(payload.key_length)) {
-      delete payload.key_length;
-    }
-
-    delete payload.webhook_callback_url;
-    delete payload.webhook_callback_token;
-
-    const upstream = await postXiaomark("/v2/sl/link/create", payload, 15000);
-
-    // 强制登录后，req.session 一定存在；记录到当前用户的历史
-    if (upstream.data?.code === 0 && upstream.data?.data?.link_url) {
-      const linkUrl = upstream.data.data.link_url;
-      const groupLabel = body._group_name || "";
-      stmtInsertHistory.run(
-        req.session.open_id,
-        linkUrl,
-        targetUrl,
-        cleanOptionalString(body.name) || "",
-        cleanOptionalString(body.domain) || "",
-        groupId,
-        groupLabel
-      );
-    }
-
-    return res.status(upstream.ok ? 200 : upstream.status).json(upstream.data);
-  } catch (error) {
-    const isAbort = error?.name === "AbortError";
-    return sendError(
-      res,
-      isAbort ? 504 : 500,
-      isAbort ? "Upstream request timeout" : "Internal server error",
-      String(error?.message || error)
-    );
-  }
-});
 
 app.post("/api/tools/qrcode", requireAuth, async (req, res) => {
   try {
-    const text = cleanOptionalString(req.body?.text);
-    if (!text) return sendError(res, 400, "text is required.");
-    if (text.length > 2048) return sendError(res, 400, "text is too long (max 2048 chars).");
-
-    const parsed = parseHttpUrl(text);
-    if (!parsed) {
-      return sendError(res, 400, "text must be a valid http:// or https:// URL.");
-    }
-
-    const dataUrl = await QRCode.toDataURL(parsed.toString(), {
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: 320,
-      color: {
-        dark: "#1F2329",
-        light: "#FFFFFF",
-      },
-    });
-
-    return res.json({
-      code: 0,
-      message: "ok",
-      data: {
-        text: parsed.toString(),
-        data_url: dataUrl,
-      },
-    });
+    const parsed = parseHttpUrl(req.body?.text);
+    if (!parsed) return fail(res, 400, "invalid_url", "二维码内容必须是 http/https 链接");
+    const dataUrl = await QRCode.toDataURL(parsed.toString(), { errorCorrectionLevel: "M", margin: 2, width: 320, color: { dark: "#050505", light: "#FFFFFF" } });
+    return ok(res, { text: parsed.toString(), data_url: dataUrl });
   } catch (error) {
-    return sendError(res, 500, "Failed to generate QR code", String(error?.message || error));
+    log("error", `qrcode failed: ${error?.message || error}`);
+    return fail(res, 500, "qrcode_failed", "二维码生成失败");
   }
 });
 
 app.post("/api/tools/resolve-redirect", requireAuth, async (req, res) => {
+  const url = parseHttpUrl(req.body?.url);
+  if (!url) return fail(res, 400, "invalid_url", "请输入 http/https 链接");
   try {
-    const url = parseHttpUrl(req.body?.url);
-    if (!url) return sendError(res, 400, "url must be a valid http:// or https:// URL.");
-
-    const result = await resolveRedirectChain(url.toString(), {
-      timeoutMs: 10_000,
-      maxHops: 6,
-    });
-
-    return res.json({
-      code: 0,
-      message: "ok",
-      data: {
-        input_url: url.toString(),
-        redirected: Boolean(result.redirected),
-        final_url: result.finalUrl,
-        steps: result.steps,
-        truncated: Boolean(result.truncated),
-      },
-    });
+    const result = await resolveRedirectChain(url.toString());
+    return ok(res, { input_url: url.toString(), redirected: Boolean(result.redirected), final_url: result.finalUrl, steps: result.steps, truncated: Boolean(result.truncated) });
   } catch (error) {
     const isAbort = error?.name === "AbortError";
-    return sendError(
-      res,
-      isAbort ? 504 : 500,
-      isAbort ? "Redirect resolve timeout" : "Failed to resolve redirect",
-      String(error?.message || error)
-    );
+    return fail(res, isAbort ? 504 : 400, isAbort ? "timeout" : "resolve_failed", isAbort ? "解析超时" : String(error?.message || "解析失败"));
   }
 });
 
-app.get("/go", (req, res) => {
-  const url = parseHttpUrl(req.query?.url);
-  if (!url) {
-    return res.status(400).send("Invalid url. Expect http:// or https://");
+// /go 只允许跳到小码短链域名（自有域名 + 默认域名），不再是开放跳转
+let goHostsCache = { at: 0, hosts: new Set(["sourl.cn"]) };
+async function goHosts() {
+  if (Date.now() - goHostsCache.at < 10 * 60_000) return goHostsCache.hosts;
+  const hosts = new Set(["sourl.cn", ...ALLOWED_GO_HOSTS]);
+  for (const d of q(`SELECT DISTINCT domain FROM links WHERE domain <> ''`).all()) hosts.add(String(d.domain).toLowerCase());
+  if (xm) {
+    try {
+      for (const d of await xm.privateDomains()) hosts.add(String(d.domain).toLowerCase());
+    } catch {}
   }
+  goHostsCache = { at: Date.now(), hosts };
+  return hosts;
+}
+app.get("/go", async (req, res) => {
+  const url = parseHttpUrl(req.query?.url);
+  if (!url) return res.status(400).type("text/plain").send("Invalid url. Expect http:// or https://");
+  const hosts = await goHosts();
+  if (!hosts.has(url.hostname.toLowerCase())) return res.status(400).type("text/plain").send("Only short link domains are allowed");
   return res.redirect(302, url.toString());
 });
 
-// HTML 不缓存，避免部署后用户拿到旧 index.html / login.html
-function sendHtml(res, filename) {
-  res.set("Cache-Control", "no-cache");
-  res.sendFile(path.join(__dirname, "public", filename));
+// ===== 业务 API =====
+if (xm && sync) {
+  app.use(
+    "/api",
+    createApiRouter({
+      db,
+      q,
+      xm,
+      sync,
+      requireAuth,
+      adminFeishuIds: ADMIN_FEISHU_OPEN_IDS,
+      webhook: { token: process.env.XIAOMARK_WEBHOOK_TOKEN?.trim() || "", relayUrl: process.env.WEBHOOK_RELAY_URL?.trim() || "" },
+      log,
+    })
+  );
+} else {
+  app.use("/api", (_req, res) => fail(res, 503, "not_configured", "服务端未配置 XIAOMARK_API_KEY"));
 }
 
-// /login 是登录页（不需要登录态）
-app.get("/login", (_req, res) => sendHtml(res, "login.html"));
+// ===== 静态与页面 =====
+function sendHtml(res, file) {
+  res.set("Cache-Control", "no-cache");
+  res.sendFile(file);
+}
+app.get("/login", (_req, res) => sendHtml(res, path.join(PUBLIC_DIR, "login.html")));
+app.use("/mascots", express.static(path.join(PUBLIC_DIR, "mascots"), { maxAge: "7d" }));
+if (fs.existsSync(WEB_DIST)) {
+  app.use("/assets", express.static(path.join(WEB_DIST, "assets"), { immutable: true, maxAge: "365d", fallthrough: false }));
+  app.use(express.static(WEB_DIST, { index: false, maxAge: "1h" }));
+}
 
-// 其他所有 HTML 路径：未登录 → 跳 /login；已登录 → index.html
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api/") || req.path.startsWith("/auth/")) return next();
-
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
   const session = resolveSession(req);
   if (!session) {
-    // 用 303 防止 POST 路径误转发；带 next 让登录后回原路径
-    const next = encodeURIComponent(req.originalUrl || "/");
-    return res.redirect(303, `/login?next=${next}`);
+    const nextPath = encodeURIComponent(req.originalUrl || "/");
+    return res.redirect(303, `/login?next=${nextPath}`);
   }
-  return sendHtml(res, "index.html");
+  const indexFile = path.join(WEB_DIST, "index.html");
+  if (!fs.existsSync(indexFile)) return res.status(503).type("text/plain").send("前端尚未构建：请先在 web/ 目录执行 npm run build");
+  return sendHtml(res, indexFile);
 });
 
 app.listen(PORT, () => {
-  console.log(`short-url app running on http://localhost:${PORT}`);
-  console.log(
-    SERVER_API_KEY
-      ? "XIAOMARK_API_KEY loaded from environment (frontend key field can be left blank)."
-      : "XIAOMARK_API_KEY not set (user can provide apikey in the form)."
-  );
-  const fbifReady = Boolean(
-    (process.env.FEISHU_FBIF_APP_ID || "").trim() &&
-      (process.env.FEISHU_FBIF_APP_SECRET || "").trim()
-  );
-  console.log(
-    `Feishu OAuth（单应用，富的走关联组织共享）: FBIF=${fbifReady ? "ready" : "MISSING"}`
-  );
-  if (!process.env.FEISHU_REDIRECT_BASE) {
-    console.warn("⚠️  FEISHU_REDIRECT_BASE not set — OAuth callbacks will fail.");
-  }
-  if (DEFAULT_WEBHOOK_CALLBACK_URL) {
-    console.log("DEFAULT_WEBHOOK_CALLBACK_URL loaded for UI defaults.");
+  log("info", `short-url app running on http://localhost:${PORT}`);
+  log("info", SERVER_API_KEY ? "XIAOMARK_API_KEY loaded." : "XIAOMARK_API_KEY not set: business API disabled.");
+  const fbifReady = Boolean((process.env.FEISHU_FBIF_APP_ID || "").trim() && (process.env.FEISHU_FBIF_APP_SECRET || "").trim());
+  log("info", `Feishu OAuth（单应用）: FBIF=${fbifReady ? "ready" : "MISSING"}`);
+  if (!process.env.FEISHU_REDIRECT_BASE) log("warn", "FEISHU_REDIRECT_BASE not set — OAuth callbacks will fail.");
+  if (!fs.existsSync(WEB_DIST)) log("warn", "web/dist not found — pages will respond 503 until the frontend is built.");
+  if (sync && SYNC_ENABLED) {
+    sync.start({ initialDelayMs: Number(process.env.SYNC_INITIAL_DELAY_MS || 5000) });
+    log("info", `sync scheduler started (tick ${sync.options.tickMs} ms)`);
   }
 });
